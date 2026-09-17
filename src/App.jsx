@@ -47,6 +47,20 @@ const CODE_LANGUAGES = [
 
 function clone(value) { return structuredClone(value); }
 
+function insertTextAtCaret(text) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return false;
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const node = window.document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
 export default function App() {
   const [document, setDocument] = useState(createInitialDocument);
   const [activeId, setActiveId] = useState(document.blocks[0].id);
@@ -56,7 +70,9 @@ export default function App() {
   const [error, setError] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
   const editorRefs = useRef(new Map());
+  const continuationRefs = useRef(new Map());
   const pendingFocus = useRef(null);
+  const pendingContinuationFocus = useRef(null);
   const history = useRef({ past: [], future: [], lastInputAt: 0 });
 
   useEffect(() => {
@@ -71,26 +87,38 @@ export default function App() {
   useEffect(() => {
     for (const block of document.blocks) {
       const node = editorRefs.current.get(block.id);
-      if (node && node.textContent !== (block.text || '')) node.textContent = block.text || '';
+      if (!node) continue;
+      const current = block.type === 'pre' ? node.innerText.replace(/\r\n/g, '\n') : node.textContent || '';
+      if (current !== (block.text || '')) {
+        if (block.type === 'pre') node.innerText = block.text || '';
+        else node.textContent = block.text || '';
+      }
     }
   }, [document]);
 
   useEffect(() => {
-    if (!pendingFocus.current) return;
-    const id = pendingFocus.current;
-    pendingFocus.current = null;
-    requestAnimationFrame(() => {
-      const node = editorRefs.current.get(id);
-      if (!node) return;
-      node.focus();
-      const selection = window.getSelection();
-      if (!selection) return;
-      const range = window.document.createRange();
-      range.selectNodeContents(node);
-      range.collapse(false);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    });
+    if (pendingFocus.current) {
+      const id = pendingFocus.current;
+      pendingFocus.current = null;
+      requestAnimationFrame(() => {
+        const node = editorRefs.current.get(id);
+        if (!node) return;
+        node.focus();
+        const selection = window.getSelection();
+        if (!selection) return;
+        const range = window.document.createRange();
+        range.selectNodeContents(node);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      });
+    }
+
+    if (pendingContinuationFocus.current) {
+      const id = pendingContinuationFocus.current;
+      pendingContinuationFocus.current = null;
+      requestAnimationFrame(() => continuationRefs.current.get(id)?.focus());
+    }
   }, [document]);
 
   const activeBlock = document.blocks.find((block) => block.id === activeId) || document.blocks[0];
@@ -107,21 +135,24 @@ export default function App() {
     setHistoryVersion((value) => value + 1);
   };
 
-  const updateText = (id, text) => commit({ ...document, blocks: document.blocks.map((block) => block.id === id ? { ...block, text } : block) }, { coalesce: true });
+  const updateText = (id, text) => commit({
+    ...document,
+    blocks: document.blocks.map((block) => block.id === id ? { ...block, text } : block),
+  }, { coalesce: true });
 
   const changeType = (type, size = null) => {
     if (type === 'divider') {
       const index = document.blocks.findIndex((block) => block.id === activeId);
       if (index < 0) return;
 
-      // A divider is a standalone structural block. Do not create an extra paragraph
-      // here; the user can press Enter in the surrounding text block when they want to continue.
       const divider = createBlock('divider');
       const blocks = [...document.blocks];
       blocks.splice(index + 1, 0, divider);
       commit({ ...document, blocks });
-      setActiveId(activeId);
       setLanguageOpenId(null);
+      setFormatOpen(false);
+      setActiveId(divider.id);
+      if (index + 1 === document.blocks.length) pendingContinuationFocus.current = divider.id;
     } else {
       commit({
         ...document,
@@ -136,8 +167,8 @@ export default function App() {
       });
       setLanguageOpenId(null);
       requestAnimationFrame(() => editorRefs.current.get(activeId)?.focus());
+      setFormatOpen(false);
     }
-    setFormatOpen(false);
     tg()?.HapticFeedback?.selectionChanged?.();
   };
 
@@ -156,6 +187,19 @@ export default function App() {
     const nextBlock = createBlock('paragraph');
     const blocks = [...document.blocks];
     blocks.splice(blocks.findIndex((block) => block.id === id) + 1, 0, nextBlock);
+    commit({ ...document, blocks });
+    setActiveId(nextBlock.id);
+    pendingFocus.current = nextBlock.id;
+    setLanguageOpenId(null);
+  };
+
+  const createParagraphAfterDivider = (dividerId, text) => {
+    if (!text) return;
+    const index = document.blocks.findIndex((block) => block.id === dividerId);
+    if (index < 0) return;
+    const nextBlock = createBlock('paragraph', 1, text);
+    const blocks = [...document.blocks];
+    blocks.splice(index + 1, 0, nextBlock);
     commit({ ...document, blocks });
     setActiveId(nextBlock.id);
     pendingFocus.current = nextBlock.id;
@@ -197,6 +241,13 @@ export default function App() {
   };
 
   const handleKeyDown = (event, block) => {
+    if (block.type === 'pre' && event.key === 'Enter') {
+      event.preventDefault();
+      const node = editorRefs.current.get(block.id);
+      if (node && insertTextAtCaret('\n')) updateText(block.id, node.innerText.replace(/\r\n/g, '\n'));
+      return;
+    }
+
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       insertAfter(block.id);
@@ -225,7 +276,10 @@ export default function App() {
       const response = await fetch('/api/telegram', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ initData: app.initData, document }),
+        body: JSON.stringify({
+          initData: app.initData,
+          document: { version: 1, blocks: payload.blocks },
+        }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || 'Could not send Rich Message.');
@@ -257,64 +311,92 @@ export default function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="history-actions">
-          <button className="icon-button" aria-label="Undo" onClick={undo} disabled={!canUndo}><Icon name="undo" /></button>
-          <button className="icon-button" aria-label="Redo" onClick={redo} disabled={!canRedo}><Icon name="redo" /></button>
+          <button className="icon-button" aria-label="Undo" onClick={undo} disabled={!canUndo}><Icon name="undo" size={21} /></button>
+          <button className="icon-button" aria-label="Redo" onClick={redo} disabled={!canRedo}><Icon name="redo" size={21} /></button>
         </div>
       </header>
 
       <section className="editor" onClick={() => { setFormatOpen(false); setLanguageOpenId(null); }}>
         <div className="document-area">
-          {document.blocks.map((block) => (
-            <div key={block.id} className={`editor-block ${blockClass(block)} ${activeId === block.id ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); setActiveId(block.id); }}>
-              {block.type === 'divider' ? (
-                <div className="divider-line" role="separator" aria-label="Divider" />
-              ) : (
-                <>
-                  {block.type === 'pre' && (
-                    <div className="code-tools" onClick={(event) => event.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="code-language-button"
-                        aria-label="Set code language"
-                        aria-expanded={languageOpenId === block.id}
-                        onClick={() => { setActiveId(block.id); setLanguageOpenId((openId) => openId === block.id ? null : block.id); setFormatOpen(false); }}
-                      >
-                        {CODE_LANGUAGES.find((language) => language.value === block.language)?.label || block.language || 'Language'}
-                        <span className="code-language-chevron">⌄</span>
-                      </button>
-                      {languageOpenId === block.id && (
-                        <div className="code-language-menu" onClick={(event) => event.stopPropagation()}>
-                          {CODE_LANGUAGES.map((language) => (
-                            <button
-                              type="button"
-                              key={language.value || 'plain'}
-                              className={`code-language-option ${block.language === language.value ? 'active' : ''}`}
-                              onClick={() => setCodeLanguage(block.id, language.value)}
-                            >
-                              <span>{language.label}</span>
-                              {block.language === language.value && <Icon name="check" size={18} />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+          {document.blocks.map((block, index) => (
+            <React.Fragment key={block.id}>
+              <div className={`editor-block ${blockClass(block)} ${activeId === block.id ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); setActiveId(block.id); }}>
+                {block.type === 'divider' ? (
+                  <div className="divider-line" role="separator" aria-label="Divider" />
+                ) : (
+                  <>
+                    {block.type === 'pre' && (
+                      <div className="code-tools" onClick={(event) => event.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="code-language-button"
+                          aria-label="Set code language"
+                          aria-expanded={languageOpenId === block.id}
+                          onClick={() => { setActiveId(block.id); setLanguageOpenId((openId) => openId === block.id ? null : block.id); setFormatOpen(false); }}
+                        >
+                          {CODE_LANGUAGES.find((language) => language.value === block.language)?.label || block.language || 'Language'}
+                          <span className="code-language-chevron">⌄</span>
+                        </button>
+                        {languageOpenId === block.id && (
+                          <div className="code-language-menu" onClick={(event) => event.stopPropagation()}>
+                            {CODE_LANGUAGES.map((language) => (
+                              <button
+                                type="button"
+                                key={language.value || 'plain'}
+                                className={`code-language-option ${block.language === language.value ? 'active' : ''}`}
+                                onClick={() => setCodeLanguage(block.id, language.value)}
+                              >
+                                <span>{language.label}</span>
+                                {block.language === language.value && <Icon name="check" size={18} />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div
+                      ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
+                      className="editable"
+                      contentEditable={block.type === 'pre' ? 'plaintext-only' : true}
+                      suppressContentEditableWarning
+                      spellCheck={block.type !== 'pre'}
+                      role="textbox"
+                      aria-multiline="true"
+                      aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Code block' : block.type === 'footer' ? 'Footer' : 'Paragraph'}
+                      data-placeholder={placeholder(block)}
+                      onFocus={() => setActiveId(block.id)}
+                      onInput={(event) => {
+                        const value = block.type === 'pre'
+                          ? event.currentTarget.innerText.replace(/\r\n/g, '\n')
+                          : event.currentTarget.textContent || '';
+                        updateText(block.id, value);
+                      }}
+                      onKeyDown={(event) => handleKeyDown(event, block)}
+                    />
+                  </>
+                )}
+              </div>
+
+              {block.type === 'divider' && index === document.blocks.length - 1 && (
+                <div className="divider-continuation" onClick={(event) => event.stopPropagation()}>
                   <div
-                    ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
-                    className="editable"
-                    contentEditable
+                    ref={(node) => { if (node) continuationRefs.current.set(block.id, node); else continuationRefs.current.delete(block.id); }}
+                    className="continuation-editable"
+                    contentEditable="plaintext-only"
                     suppressContentEditableWarning
-                    spellCheck={block.type !== 'pre'}
                     role="textbox"
-                    aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Code block' : block.type === 'footer' ? 'Footer' : 'Paragraph'}
-                    data-placeholder={placeholder(block)}
+                    aria-multiline="true"
+                    aria-label="Text below divider"
+                    data-placeholder="Write here…"
                     onFocus={() => setActiveId(block.id)}
-                    onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')}
-                    onKeyDown={(event) => handleKeyDown(event, block)}
+                    onInput={(event) => {
+                      const text = event.currentTarget.innerText.replace(/\r\n/g, '\n').trimEnd();
+                      if (text) createParagraphAfterDivider(block.id, text);
+                    }}
                   />
-                </>
+                </div>
               )}
-            </div>
+            </React.Fragment>
           ))}
         </div>
       </section>
@@ -334,7 +416,7 @@ export default function App() {
             </div>}
           </div>
         </div>
-        <button className="share-button" aria-label="Send Rich Message to yourself" onClick={send} disabled={sending}><Icon name="send" size={25} /></button>
+        <button className="share-button" aria-label="Send Rich Message to yourself" onClick={send} disabled={sending}><Icon name="send" size={23} /></button>
       </footer>
     </main>
   );

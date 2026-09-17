@@ -23,9 +23,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [, setHistoryVersion] = useState(0);
   const editorRefs = useRef(new Map());
-  const continuationRefs = useRef(new Map());
   const pendingFocus = useRef(null);
-  const pendingContinuationFocus = useRef(null);
+  const pendingAfterFocus = useRef(null);
   const history = useRef({ past: [], future: [], lastInputAt: 0 });
 
   useEffect(() => {
@@ -58,20 +57,36 @@ export default function App() {
     if (block.type === 'divider') {
       const index = document.blocks.findIndex(item => item.id === id);
       const next = document.blocks.slice(index + 1).find(item => item.type !== 'divider');
-      return next ? focusNode(editorRefs.current.get(next.id)) : focusNode(continuationRefs.current.get(id));
+      return next ? focusNode(editorRefs.current.get(next.id)) : false;
     }
     return focusNode(editorRefs.current.get(id));
   };
 
   useEffect(() => {
     if (pendingFocus.current) { const id = pendingFocus.current; pendingFocus.current = null; requestAnimationFrame(() => focusBlock(id)); }
-    if (pendingContinuationFocus.current) { const id = pendingContinuationFocus.current; pendingContinuationFocus.current = null; requestAnimationFrame(() => focusNode(continuationRefs.current.get(id))); }
+    if (pendingAfterFocus.current) {
+      const anchorId = pendingAfterFocus.current; pendingAfterFocus.current = null;
+      const anchorIndex = document.blocks.findIndex(item => item.id === anchorId);
+      const target = anchorIndex >= 0 ? document.blocks[anchorIndex + 1] : null;
+      if (target) { setActiveId(target.id); requestAnimationFrame(() => focusBlock(target.id)); }
+    }
   }, [document]);
 
+  // A `divider` or `pre` block can never be the last block in the document:
+  // there would be no way to click or type your way past it. Whenever a
+  // mutation would leave one of those trailing, silently append a normal
+  // empty paragraph after it so there's always somewhere to continue writing.
+  const ensureTrailingParagraph = next => {
+    const blocks = next.blocks; const last = blocks[blocks.length - 1];
+    if (last && (last.type === 'pre' || last.type === 'divider')) return { ...next, blocks: [...blocks, createBlock('paragraph')] };
+    return next;
+  };
+
   const commit = (next, { coalesce = false } = {}) => {
+    const normalized = ensureTrailingParagraph(next);
     const now = Date.now();
     if (!coalesce || now - history.current.lastInputAt > 650) history.current.past.push(clone(document));
-    history.current.lastInputAt = now; history.current.future = []; setDocument(next); setHistoryVersion(v => v + 1);
+    history.current.lastInputAt = now; history.current.future = []; setDocument(normalized); setHistoryVersion(v => v + 1);
   };
   const updateText = (id, text) => commit({ ...document, blocks: document.blocks.map(b => b.id === id ? { ...b, text } : b) }, { coalesce: true });
 
@@ -81,8 +96,8 @@ export default function App() {
       const blocks = [...document.blocks];
       if (blocks[index + 1]?.type === 'paragraph' && blocks[index + 1].text === '') blocks.splice(index + 1, 1);
       const divider = createBlock('divider'); blocks.splice(index + 1, 0, divider);
-      commit({ ...document, blocks }); setActiveId(divider.id); setLanguageOpenId(null); setFormatOpen(false);
-      if (index + 1 === blocks.length - 1) pendingContinuationFocus.current = divider.id;
+      commit({ ...document, blocks }); setLanguageOpenId(null); setFormatOpen(false);
+      pendingAfterFocus.current = divider.id;
     } else {
       commit({ ...document, blocks: document.blocks.map(block => {
         if (block.id !== activeId) return block;
@@ -106,15 +121,6 @@ export default function App() {
     const nextBlock = createBlock('paragraph'); const blocks = [...document.blocks];
     blocks.splice(blocks.findIndex(b => b.id === id) + 1, 0, nextBlock); commit({ ...document, blocks });
     setActiveId(nextBlock.id); pendingFocus.current = nextBlock.id; setLanguageOpenId(null);
-  };
-
-  const createParagraphAfterDivider = (dividerId, text) => {
-    if (!text) return;
-    const index = document.blocks.findIndex(b => b.id === dividerId); if (index < 0) return;
-    const blocks = [...document.blocks]; const following = blocks[index + 1]; let nextBlock;
-    if (following?.type === 'paragraph' && following.text === '') { nextBlock = { ...following, text }; blocks[index + 1] = nextBlock; }
-    else { nextBlock = createBlock('paragraph', 1, text); blocks.splice(index + 1, 0, nextBlock); }
-    commit({ ...document, blocks }); setActiveId(nextBlock.id); pendingFocus.current = nextBlock.id; setLanguageOpenId(null);
   };
 
   const removeBlock = id => {
@@ -163,7 +169,7 @@ export default function App() {
     <header className="topbar"><div className="history-actions"><button className="icon-button" aria-label="Undo" onClick={undo} disabled={!canUndo}><Icon name="undo" size={21}/></button><button className="icon-button" aria-label="Redo" onClick={redo} disabled={!canRedo}><Icon name="redo" size={21}/></button></div></header>
     <section className="editor" onClick={() => { setFormatOpen(false); setLanguageOpenId(null); }}>
       <div className="document-area" onClick={event => { if (event.target === event.currentTarget) requestAnimationFrame(() => focusBlock(activeId)); }}>
-        {document.blocks.map((block, index) => <React.Fragment key={block.id}>
+        {document.blocks.map(block => <React.Fragment key={block.id}>
           <div className={`editor-block ${blockClass(block)} ${activeId === block.id ? 'active' : ''}`} onClick={event => { event.stopPropagation(); setActiveId(block.id); requestAnimationFrame(() => focusBlock(block.id)); }}>
             {block.type === 'divider' ? <div className="divider-line" role="separator" aria-label="Divider"/> : <>
               {block.type === 'pre' && <div className="code-tools" onClick={event => event.stopPropagation()}>
@@ -175,7 +181,6 @@ export default function App() {
               {block.type === 'pre' ? <textarea ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable code-editor" value={block.text} rows={4} wrap="off" spellCheck={false} aria-label="Code block" aria-multiline="true" placeholder={placeholder(block)} onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()} onChange={event => updateText(block.id, event.currentTarget.value)} onKeyDown={event => handleKeyDown(event, block)}/> : <div ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable" contentEditable suppressContentEditableWarning spellCheck role="textbox" aria-multiline="true" aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'footer' ? 'Footer' : 'Paragraph'} data-placeholder={placeholder(block)} onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()} onInput={event => updateText(block.id, event.currentTarget.textContent || '')} onKeyDown={event => handleKeyDown(event, block)}/>} 
             </>}
           </div>
-          {block.type === 'divider' && index === document.blocks.length - 1 && <div className="divider-continuation" onClick={event => event.stopPropagation()}><div ref={node => { if (node) continuationRefs.current.set(block.id, node); else continuationRefs.current.delete(block.id); }} className="continuation-editable" contentEditable="plaintext-only" suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="Text below divider" data-placeholder="Write here…" onFocus={() => setActiveId(block.id)} onInput={event => { const text = event.currentTarget.innerText.replace(/\r\n/g, '\n').trimEnd(); if (text) createParagraphAfterDivider(block.id, text); }}/></div>}
         </React.Fragment>)}
       </div>
     </section>

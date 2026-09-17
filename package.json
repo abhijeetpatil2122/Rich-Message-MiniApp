@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@upstash/redis": "latest",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "react": "latest",

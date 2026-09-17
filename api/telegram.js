@@ -1,4 +1,5 @@
-import { decodeDocument, toTelegramRichMessage } from './_rich.js';
+import { getShare } from './_share-store.js';
+import { toTelegramRichMessage } from '../src/lib/document.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -38,6 +39,22 @@ function emptyResult() {
   };
 }
 
+function shareIdFromQuery(query) {
+  const match = /^rm_([a-f0-9]{32})$/i.exec(query.trim());
+  return match?.[1] || null;
+}
+
+function titleForDocument(document) {
+  const text = document.blocks
+    .map((block) => block.text)
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  if (!text) return 'Rich Message';
+  return text.length > 64 ? `${text.slice(0, 63)}…` : text;
+}
+
 export default async function handler(request, response) {
   if (request.method === 'GET') {
     return response.status(200).json({ ok: true, service: 'rich-message-inline-bot' });
@@ -51,14 +68,14 @@ export default async function handler(request, response) {
     return response.status(401).json({ ok: false, error: 'Unauthorized.' });
   }
 
+  const update = request.body || {};
+  const inlineQuery = update.inline_query;
+
+  if (!inlineQuery) {
+    return response.status(200).json({ ok: true });
+  }
+
   try {
-    const update = request.body || {};
-    const inlineQuery = update.inline_query;
-
-    if (!inlineQuery) {
-      return response.status(200).json({ ok: true });
-    }
-
     if (!inlineQuery.query) {
       await telegram('answerInlineQuery', {
         inline_query_id: inlineQuery.id,
@@ -67,18 +84,46 @@ export default async function handler(request, response) {
       return response.status(200).json({ ok: true });
     }
 
-    const document = decodeDocument(inlineQuery.query);
+    const shareId = shareIdFromQuery(inlineQuery.query);
+    if (!shareId) {
+      await telegram('answerInlineQuery', {
+        inline_query_id: inlineQuery.id,
+        results: [],
+        cache_time: 0,
+        is_personal: true,
+      });
+      return response.status(200).json({ ok: true });
+    }
+
+    const document = await getShare(shareId);
+    if (!document) {
+      await telegram('answerInlineQuery', {
+        inline_query_id: inlineQuery.id,
+        results: [],
+        cache_time: 0,
+        is_personal: true,
+      });
+      return response.status(200).json({ ok: true });
+    }
+
     const richMessage = toTelegramRichMessage(document);
-    const firstText = document.blocks.find((block) => block.text)?.text || 'Rich Message';
-    const title = firstText.length > 42 ? `${firstText.slice(0, 42)}…` : firstText;
+    if (!richMessage.blocks.length) {
+      await telegram('answerInlineQuery', {
+        inline_query_id: inlineQuery.id,
+        results: [],
+        cache_time: 0,
+        is_personal: true,
+      });
+      return response.status(200).json({ ok: true });
+    }
 
     await telegram('answerInlineQuery', {
       inline_query_id: inlineQuery.id,
       results: [
         {
           type: 'article',
-          id: `rich-${inlineQuery.id}`,
-          title,
+          id: `rich-${shareId}`,
+          title: titleForDocument(document),
           description: 'Rich Message',
           input_message_content: {
             rich_message: richMessage,
@@ -92,22 +137,18 @@ export default async function handler(request, response) {
     return response.status(200).json({ ok: true });
   } catch (error) {
     console.error('inline query error', error);
-    if (inlineQueryIdFromRequest(request.body)) {
-      try {
-        await telegram('answerInlineQuery', {
-          inline_query_id: inlineQueryIdFromRequest(request.body),
-          results: [],
-          cache_time: 0,
-          is_personal: true,
-        });
-      } catch (answerError) {
-        console.error('failed to clear inline results', answerError);
-      }
+
+    try {
+      await telegram('answerInlineQuery', {
+        inline_query_id: inlineQuery.id,
+        results: [],
+        cache_time: 0,
+        is_personal: true,
+      });
+    } catch (answerError) {
+      console.error('failed to clear inline results', answerError);
     }
+
     return response.status(200).json({ ok: false, error: error.message });
   }
-}
-
-function inlineQueryIdFromRequest(update) {
-  return update?.inline_query?.id || null;
 }

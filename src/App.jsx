@@ -15,6 +15,12 @@ function Icon({ name, size = 24 }) {
 }
 
 const HEADING_OPTIONS = [1, 2, 3, 4, 5, 6].map((size) => ({ size, label: `Heading ${size}` }));
+const BLOCK_OPTIONS = [
+  { type: 'pre', label: 'Code block', icon: '</>' },
+  { type: 'footer', label: 'Footer', icon: 'F' },
+  { type: 'divider', label: 'Divider', icon: '—' },
+];
+
 function clone(value) { return structuredClone(value); }
 
 export default function App() {
@@ -40,7 +46,7 @@ export default function App() {
   useEffect(() => {
     for (const block of document.blocks) {
       const node = editorRefs.current.get(block.id);
-      if (node && node.textContent !== block.text) node.textContent = block.text;
+      if (node && node.textContent !== (block.text || '')) node.textContent = block.text || '';
     }
   }, [document]);
 
@@ -79,17 +85,31 @@ export default function App() {
   const updateText = (id, text) => commit({ ...document, blocks: document.blocks.map((block) => block.id === id ? { ...block, text } : block) }, { coalesce: true });
 
   const changeType = (type, size = null) => {
-    commit({
-      ...document,
-      blocks: document.blocks.map((block) => {
-        if (block.id !== activeId) return block;
-        if (type === 'paragraph') return { ...block, type: 'paragraph' };
-        return { ...block, type: 'heading', size };
-      }),
-    });
+    if (type === 'divider') {
+      const index = document.blocks.findIndex((block) => block.id === activeId);
+      const divider = createBlock('divider');
+      const nextBlock = createBlock('paragraph');
+      const blocks = [...document.blocks];
+      blocks.splice(index + 1, 0, divider, nextBlock);
+      commit({ ...document, blocks });
+      setActiveId(nextBlock.id);
+      pendingFocus.current = nextBlock.id;
+    } else {
+      commit({
+        ...document,
+        blocks: document.blocks.map((block) => {
+          if (block.id !== activeId) return block;
+          if (type === 'paragraph') return { ...block, type: 'paragraph' };
+          if (type === 'heading') return { ...block, type: 'heading', size };
+          if (type === 'pre') return { ...block, type: 'pre', language: block.language || '' };
+          if (type === 'footer') return { ...block, type: 'footer' };
+          return block;
+        }),
+      });
+      requestAnimationFrame(() => editorRefs.current.get(activeId)?.focus());
+    }
     setFormatOpen(false);
     tg()?.HapticFeedback?.selectionChanged?.();
-    requestAnimationFrame(() => editorRefs.current.get(activeId)?.focus());
   };
 
   const insertAfter = (id) => {
@@ -107,7 +127,7 @@ export default function App() {
     const nextActive = document.blocks[index - 1] || document.blocks[index + 1];
     commit({ ...document, blocks: document.blocks.filter((block) => block.id !== id) });
     setActiveId(nextActive.id);
-    pendingFocus.current = nextActive.id;
+    if (nextActive.type !== 'divider') pendingFocus.current = nextActive.id;
   };
 
   const undo = () => {
@@ -151,13 +171,11 @@ export default function App() {
       setError('Open this editor inside Telegram first.');
       return;
     }
-
     const payload = toTelegramRichMessage(document);
     if (!payload.blocks.length) {
       setError('Write something before sending.');
       return;
     }
-
     setSending(true);
     try {
       const response = await fetch('/api/telegram', {
@@ -176,6 +194,23 @@ export default function App() {
     }
   };
 
+  const blockClass = (block) => {
+    if (block.type === 'heading') return `heading heading-${block.size}`;
+    if (block.type === 'pre') return 'preformatted';
+    if (block.type === 'footer') return 'footer-block';
+    if (block.type === 'divider') return 'divider-block';
+    return 'paragraph';
+  };
+
+  const placeholder = (block) => {
+    if (block.type === 'heading') return `Heading ${block.size}`;
+    if (block.type === 'pre') return 'Write code…';
+    if (block.type === 'footer') return 'Footer…';
+    return 'Write here…';
+  };
+
+  const isEditable = activeBlock?.type !== 'divider';
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -188,8 +223,24 @@ export default function App() {
       <section className="editor" onClick={() => setFormatOpen(false)}>
         <div className="document-area">
           {document.blocks.map((block) => (
-            <div key={block.id} className={`editor-block ${block.type === 'heading' ? `heading heading-${block.size}` : 'paragraph'} ${activeId === block.id ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); setActiveId(block.id); }}>
-              <div ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable" contentEditable suppressContentEditableWarning spellCheck role="textbox" aria-label={block.type === 'heading' ? `Heading ${block.size}` : 'Paragraph'} data-placeholder={block.type === 'heading' ? `Heading ${block.size}` : 'Write here…'} onFocus={() => setActiveId(block.id)} onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')} onKeyDown={(event) => handleKeyDown(event, block)} />
+            <div key={block.id} className={`editor-block ${blockClass(block)} ${activeId === block.id ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); setActiveId(block.id); }}>
+              {block.type === 'divider' ? (
+                <div className="divider-line" role="separator" aria-label="Divider" />
+              ) : (
+                <div
+                  ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
+                  className="editable"
+                  contentEditable
+                  suppressContentEditableWarning
+                  spellCheck={block.type !== 'pre'}
+                  role="textbox"
+                  aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Code block' : block.type === 'footer' ? 'Footer' : 'Paragraph'}
+                  data-placeholder={placeholder(block)}
+                  onFocus={() => setActiveId(block.id)}
+                  onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')}
+                  onKeyDown={(event) => handleKeyDown(event, block)}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -200,15 +251,13 @@ export default function App() {
       <footer className="composer-bar">
         <div className="toolbar">
           <div className="format-wrap">
-            <button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text formatting" aria-expanded={formatOpen} onClick={(event) => { event.stopPropagation(); setFormatOpen((open) => !open); }}>H</button>
+            <button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text and block formatting" aria-expanded={formatOpen} onClick={(event) => { event.stopPropagation(); setFormatOpen((open) => !open); }}>H</button>
             {formatOpen && <div className="format-menu" onClick={(event) => event.stopPropagation()}>
               <div className="format-menu-title">Text format</div>
-              <button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}>
-                <span className="menu-heading paragraph-icon">P</span>
-                <span>Paragraph</span>
-                {activeBlock?.type === 'paragraph' && <Icon name="check" size={21} />}
-              </button>
+              <button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}><span className="menu-heading paragraph-icon">P</span><span>Paragraph</span>{activeBlock?.type === 'paragraph' && <Icon name="check" size={21} />}</button>
               {HEADING_OPTIONS.map((option) => <button key={option.size} className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'} onClick={() => changeType('heading', option.size)}><span className={`menu-heading h-${option.size}`}>H{option.size}</span><span>{option.label}</span>{activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21} />}</button>)}
+              <div className="format-menu-title block-title">Blocks</div>
+              {BLOCK_OPTIONS.map((option) => <button key={option.type} className={activeBlock?.type === option.type ? 'menu-item active' : 'menu-item'} onClick={() => changeType(option.type)}><span className={`menu-heading block-icon ${option.type}`}>{option.icon}</span><span>{option.label}</span>{activeBlock?.type === option.type && <Icon name="check" size={21} />}</button>)}
             </div>}
           </div>
         </div>

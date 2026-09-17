@@ -16,42 +16,33 @@ export function decodeDocument(query) {
   if (Buffer.byteLength(query, 'utf8') > MAX_QUERY_BYTES) throw new Error('Inline query is too large.');
 
   let bytes;
-  if (query.startsWith(PREFIX_GZIP)) {
-    bytes = gunzipSync(fromBase64Url(query.slice(PREFIX_GZIP.length)));
-  } else if (query.startsWith(PREFIX_RAW)) {
-    bytes = fromBase64Url(query.slice(PREFIX_RAW.length));
-  } else {
-    throw new Error('Unsupported rich message payload.');
-  }
+  if (query.startsWith(PREFIX_GZIP)) bytes = gunzipSync(fromBase64Url(query.slice(PREFIX_GZIP.length)));
+  else if (query.startsWith(PREFIX_RAW)) bytes = fromBase64Url(query.slice(PREFIX_RAW.length));
+  else throw new Error('Unsupported rich message payload.');
 
   if (bytes.length > MAX_TEXT_BYTES * 4) throw new Error('Payload is too large.');
-  const document = JSON.parse(bytes.toString('utf8'));
-  return validateDocument(document);
+  let compact;
+  try { compact = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('Invalid rich message payload.'); }
+  return expandAndValidate(compact);
 }
 
-export function validateDocument(document) {
-  if (!document || document.version !== 1 || !Array.isArray(document.blocks)) {
+function expandAndValidate(input) {
+  if (!input || input.v !== 1 || !Array.isArray(input.b) || !input.b.length || input.b.length > MAX_BLOCKS) {
     throw new Error('Invalid document.');
   }
 
-  const blocks = document.blocks.slice(0, MAX_BLOCKS).map((block) => {
-    if (!block || !['paragraph', 'heading'].includes(block.type) || typeof block.text !== 'string') {
-      throw new Error('Unsupported block.');
+  const blocks = input.b.map((item) => {
+    if (!Array.isArray(item)) throw new Error('Unsupported block.');
+    if (item[0] === 'p' && typeof item[1] === 'string') return { type: 'paragraph', text: item[1] };
+    if (item[0] === 'h' && Number.isInteger(item[1]) && item[1] >= 1 && item[1] <= 6 && typeof item[2] === 'string') {
+      return { type: 'heading', text: item[2], size: item[1] };
     }
-
-    if (block.type === 'heading') {
-      const size = Number(block.size);
-      if (!Number.isInteger(size) || size < 1 || size > 6) throw new Error('Invalid heading size.');
-      return { type: 'heading', text: block.text, size };
-    }
-
-    return { type: 'paragraph', text: block.text };
+    throw new Error('Unsupported block.');
   });
-
-  if (!blocks.length) throw new Error('Document is empty.');
 
   const textLength = blocks.reduce((total, block) => total + [...block.text].length, 0);
   if (textLength > MAX_TEXT_BYTES) throw new Error('Rich message text is too long.');
+  if (!blocks.some((block) => block.text.length > 0)) throw new Error('Document is empty.');
 
   return { version: 1, blocks };
 }

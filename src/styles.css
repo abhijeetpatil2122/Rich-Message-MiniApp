@@ -107,7 +107,15 @@ button { font: inherit; color: inherit; border: 0; }
   font-weight: 400;
 }
 
-.heading .editable { line-height: 1.18; font-weight: 700; }
+/* Use a true display heading face in the editor so the live canvas reads like a heading,
+   rather than simply looking like bold paragraph text. Telegram controls the final client
+   rendering; the editor mirrors the semantic hierarchy and relative size locally. */
+.heading .editable {
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -.015em;
+}
 .heading-1 .editable { font-size: 34px; }
 .heading-2 .editable { font-size: 30px; }
 .heading-3 .editable { font-size: 27px; }
@@ -213,6 +221,11 @@ button { font: inherit; color: inherit; border: 0; }
 .menu-heading.h-4 { font-size: 18px; }
 .menu-heading.h-5 { font-size: 17px; }
 .menu-heading.h-6 { font-size: 16px; }
+.menu-heading.paragraph-icon {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
 .menu-item svg { color: var(--button); }
 
 .share-button {

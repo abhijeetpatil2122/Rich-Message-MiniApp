@@ -4,7 +4,8 @@ export default function handler(request, response) {
     ok: true,
     service: 'rich-message-mini-app',
     richMessage: true,
-    inlineMode: true,
+    sendDirect: true,
     database: false,
+    redis: false,
   });
 }

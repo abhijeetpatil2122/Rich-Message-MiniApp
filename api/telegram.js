@@ -137,7 +137,8 @@ function validateDocument(input) {
       if (block.type === 'heading') {
         const size = Number(block.size);
         if (!Number.isInteger(size) || size < 1 || size > 6) throw new Error('Invalid heading size.');
-        return { type: 'section_heading', text: block.text, size };
+        // Bot API InputRichBlockSectionHeading is serialized with type="heading".
+        return { type: 'heading', text: block.text, size };
       }
       throw new Error('Unsupported block type.');
     });

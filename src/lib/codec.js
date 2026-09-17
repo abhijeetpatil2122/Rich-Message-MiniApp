@@ -10,12 +10,6 @@ function bytesToBase64Url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function base64UrlToBytes(value) {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (value.length % 4)) % 4);
-  const binary = atob(base64);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
 async function gzip(text) {
   const stream = new CompressionStream('gzip');
   const writer = stream.writable.getWriter();
@@ -25,8 +19,17 @@ async function gzip(text) {
   return new Uint8Array(buffer);
 }
 
+function compactDocument(document) {
+  return {
+    v: 1,
+    b: document.blocks
+      .filter((block) => typeof block.text === 'string' && block.text.length > 0)
+      .map((block) => (block.type === 'heading' ? ['h', block.size, block.text] : ['p', block.text])),
+  };
+}
+
 export async function encodeDocument(document) {
-  const json = JSON.stringify(document);
+  const json = JSON.stringify(compactDocument(document));
 
   if ('CompressionStream' in window) {
     const compressed = await gzip(json);

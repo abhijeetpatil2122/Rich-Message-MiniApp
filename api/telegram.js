@@ -20,24 +20,18 @@ function validateInitData(initData) {
   if (typeof initData !== 'string' || !initData) throw new Error('Telegram initData is missing.');
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
-  if (!hash) throw new Error('Invalid Telegram initData.');
+  if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Invalid Telegram initData.');
 
   const pairs = [];
-  for (const [key, value] of params.entries()) {
-    if (key !== 'hash') pairs.push(`${key}=${value}`);
-  }
+  for (const [key, value] of params.entries()) if (key !== 'hash') pairs.push(`${key}=${value}`);
   pairs.sort();
 
   const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-  const expected = crypto.createHmac('sha256', secret).update(pairs.join('\\n')).digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(expected, 'hex'))) {
-    throw new Error('Invalid Telegram initData signature.');
-  }
+  const expected = crypto.createHmac('sha256', secret).update(pairs.join('\n')).digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(expected, 'hex'))) throw new Error('Invalid Telegram initData signature.');
 
   const authDate = Number(params.get('auth_date'));
-  if (!Number.isFinite(authDate) || Math.abs(Date.now() / 1000 - authDate) > 86400) {
-    throw new Error('Telegram initData has expired.');
-  }
+  if (!Number.isFinite(authDate) || Math.abs(Date.now() / 1000 - authDate) > 86400) throw new Error('Telegram initData has expired.');
 
   const user = JSON.parse(params.get('user') || 'null');
   if (!user?.id) throw new Error('Telegram user is missing.');
@@ -51,19 +45,19 @@ function validateDocument(input) {
   const blocks = input.blocks
     .filter((block) => block && typeof block.text === 'string' && block.text.length > 0)
     .map((block) => {
+      if (block.type === 'paragraph') return { type: 'paragraph', text: block.text };
       if (block.type === 'heading') {
         const size = Number(block.size);
         if (!Number.isInteger(size) || size < 1 || size > 6) throw new Error('Invalid heading size.');
-        return { type: 'heading', text: block.text, size };
+        return { type: 'section_heading', text: block.text, size };
       }
-      if (block.type === 'paragraph') return { type: 'paragraph', text: block.text };
       throw new Error('Unsupported block type.');
     });
 
   if (!blocks.length) throw new Error('Write something before sending.');
   const textLength = blocks.reduce((total, block) => total + [...block.text].length, 0);
   if (textLength > MAX_TEXT) throw new Error('Rich Message text is over Telegram’s 32,768 character limit.');
-  return { blocks };
+  return blocks;
 }
 
 export default async function handler(request, response) {
@@ -72,11 +66,11 @@ export default async function handler(request, response) {
 
   try {
     const user = validateInitData(request.body?.initData);
-    const document = validateDocument(request.body?.document);
+    const blocks = validateDocument(request.body?.document);
 
     const result = await telegram('sendRichMessage', {
       chat_id: user.id,
-      blocks: document.blocks,
+      rich_message: { blocks },
     });
 
     return response.status(200).json({ ok: true, message_id: result?.message_id || null });

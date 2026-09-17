@@ -40,7 +40,7 @@ button { font: inherit; color: inherit; border: 0; }
 .preformatted { position: relative; min-width: 0; }
 .preformatted .editable { width: 100%; min-height: 86px; max-height: min(52dvh, 390px); padding: 45px 14px 13px; border: 0; border-radius: 12px; outline: none; resize: none; display: block; color: var(--text); background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 15px; line-height: 1.55; tab-size: 2; white-space: pre; overflow: auto; overflow-wrap: normal; word-break: normal; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 .preformatted .editable::placeholder { color: var(--hint); opacity: 1; }
-.code-tools { position: absolute; top: 9px; right: 9px; z-index: 3; }
+.code-tools { position: absolute; top: 9px; right: 9px; z-index: 3; display: flex; align-items: center; gap: 6px; }
 .code-language-button { min-height: 28px; max-width: 180px; padding: 4px 9px 4px 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--hint); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .code-language-button:hover { color: var(--text); background: color-mix(in srgb, var(--text) 13%, transparent); }
 .code-language-chevron { font-size: 14px; line-height: .7; transform: translateY(-1px); }
@@ -52,6 +52,12 @@ button { font: inherit; color: inherit; border: 0; }
 .footer-block .editable { font-size: 15px; line-height: 1.45; color: var(--hint); padding-top: 4px; }
 .divider-block { padding: 15px 0 8px; }
 .divider-line { height: 1px; width: 100%; background: var(--separator); }
+.block-delete { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--hint); cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.block-delete:hover { color: #e5534b; background: color-mix(in srgb, #e5534b 14%, transparent); }
+.block-delete:active { transform: scale(.92); }
+.editor-block:not(.preformatted):not(.divider-block) > .block-delete { position: absolute; top: 6px; right: 6px; z-index: 3; }
+.divider-delete { position: absolute; top: -14px; right: 6px; z-index: 3; }
+.editor-block.active:not(.preformatted):not(.divider-block) .editable { padding-right: 34px; }
 
 .composer-bar { min-height: 68px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--bg) 96%, transparent); border-top: 1px solid var(--separator); position: relative; z-index: 20; }
 .toolbar { min-width: 0; flex: 1; display: flex; align-items: center; gap: 1px; overflow: visible; }

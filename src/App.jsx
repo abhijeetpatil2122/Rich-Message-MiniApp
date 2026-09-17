@@ -78,8 +78,15 @@ export default function App() {
 
   const updateText = (id, text) => commit({ ...document, blocks: document.blocks.map((block) => block.id === id ? { ...block, text } : block) }, { coalesce: true });
 
-  const changeType = (size) => {
-    commit({ ...document, blocks: document.blocks.map((block) => block.id === activeId ? { ...block, type: 'heading', size } : block) });
+  const changeType = (type, size = null) => {
+    commit({
+      ...document,
+      blocks: document.blocks.map((block) => {
+        if (block.id !== activeId) return block;
+        if (type === 'paragraph') return { ...block, type: 'paragraph' };
+        return { ...block, type: 'heading', size };
+      }),
+    });
     setFormatOpen(false);
     tg()?.HapticFeedback?.selectionChanged?.();
     requestAnimationFrame(() => editorRefs.current.get(activeId)?.focus());
@@ -193,10 +200,15 @@ export default function App() {
       <footer className="composer-bar">
         <div className="toolbar">
           <div className="format-wrap">
-            <button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Heading formatting" aria-expanded={formatOpen} onClick={(event) => { event.stopPropagation(); setFormatOpen((open) => !open); }}>H</button>
+            <button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text formatting" aria-expanded={formatOpen} onClick={(event) => { event.stopPropagation(); setFormatOpen((open) => !open); }}>H</button>
             {formatOpen && <div className="format-menu" onClick={(event) => event.stopPropagation()}>
-              <div className="format-menu-title">Heading</div>
-              {HEADING_OPTIONS.map((option) => <button key={option.size} className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'} onClick={() => changeType(option.size)}><span className={`menu-heading h-${option.size}`}>H{option.size}</span><span>{option.label}</span>{activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21} />}</button>)}
+              <div className="format-menu-title">Text format</div>
+              <button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}>
+                <span className="menu-heading paragraph-icon">P</span>
+                <span>Paragraph</span>
+                {activeBlock?.type === 'paragraph' && <Icon name="check" size={21} />}
+              </button>
+              {HEADING_OPTIONS.map((option) => <button key={option.size} className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'} onClick={() => changeType('heading', option.size)}><span className={`menu-heading h-${option.size}`}>H{option.size}</span><span>{option.label}</span>{activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21} />}</button>)}
             </div>}
           </div>
         </div>

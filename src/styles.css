@@ -36,10 +36,7 @@ button { font: inherit; color: inherit; border: 0; }
   z-index: 10;
 }
 
-.history-actions {
-  display: flex;
-  gap: 2px;
-}
+.history-actions { display: flex; gap: 2px; }
 
 .icon-button, .tool-button {
   width: 46px;
@@ -52,14 +49,8 @@ button { font: inherit; color: inherit; border: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 
-.icon-button:active, .tool-button:active, .share-button:active, .menu-item:active {
-  transform: scale(.94);
-}
-
-.icon-button:disabled {
-  cursor: default;
-  opacity: .28;
-}
+.icon-button:active, .tool-button:active, .share-button:active, .menu-item:active { transform: scale(.94); }
+.icon-button:disabled { cursor: default; opacity: .28; }
 
 .editor {
   flex: 1;
@@ -95,21 +86,10 @@ button { font: inherit; color: inherit; border: 0; }
   unicode-bidi: plaintext;
 }
 
-.editable:empty::before {
-  content: attr(data-placeholder);
-  color: var(--hint);
-  pointer-events: none;
-}
+.editable:empty::before { content: attr(data-placeholder); color: var(--hint); pointer-events: none; }
 
-.paragraph .editable {
-  font-size: 19px;
-  line-height: 1.52;
-  font-weight: 400;
-}
+.paragraph .editable { font-size: 19px; line-height: 1.52; font-weight: 400; }
 
-/* Use a true display heading face in the editor so the live canvas reads like a heading,
-   rather than simply looking like bold paragraph text. Telegram controls the final client
-   rendering; the editor mirrors the semantic hierarchy and relative size locally. */
 .heading .editable {
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1.12;
@@ -123,6 +103,29 @@ button { font: inherit; color: inherit; border: 0; }
 .heading-5 .editable { font-size: 21px; }
 .heading-6 .editable { font-size: 19px; }
 
+/* Telegram <pre><code> style preview. Keep code blocks visually distinct while preserving
+   the same editable/plain-text behavior as the other block types. */
+.preformatted .editable {
+  min-height: 52px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.footer-block .editable {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--hint);
+  padding-top: 4px;
+}
+
+.divider-block { padding: 15px 0; }
+.divider-line { height: 1px; width: 100%; background: var(--separator); }
+
 .composer-bar {
   min-height: 76px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
@@ -135,32 +138,10 @@ button { font: inherit; color: inherit; border: 0; }
   z-index: 20;
 }
 
-.toolbar {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  overflow: visible;
-}
-
-.tool-button {
-  flex: 0 0 46px;
-  color: var(--text);
-  font-size: 21px;
-  font-weight: 700;
-}
-
-.tool-button.heading-tool {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 24px;
-}
-
-.tool-button.heading-tool.selected {
-  color: var(--button);
-  background: color-mix(in srgb, var(--button) 14%, transparent);
-}
-
+.toolbar { min-width: 0; flex: 1; display: flex; align-items: center; gap: 1px; overflow: visible; }
+.tool-button { flex: 0 0 46px; color: var(--text); font-size: 21px; font-weight: 700; }
+.tool-button.heading-tool { font-family: Georgia, "Times New Roman", serif; font-size: 24px; }
+.tool-button.heading-tool.selected { color: var(--button); background: color-mix(in srgb, var(--button) 14%, transparent); }
 .format-wrap { position: relative; }
 
 .format-menu {
@@ -168,6 +149,8 @@ button { font: inherit; color: inherit; border: 0; }
   left: -6px;
   bottom: 56px;
   width: 238px;
+  max-height: min(70dvh, 520px);
+  overflow-y: auto;
   padding: 7px;
   border-radius: 18px;
   background: color-mix(in srgb, var(--surface) 98%, black 2%);
@@ -177,17 +160,9 @@ button { font: inherit; color: inherit; border: 0; }
   animation: menu-in .12s ease-out;
 }
 
-@keyframes menu-in {
-  from { opacity: 0; transform: translateY(5px) scale(.98); }
-  to { opacity: 1; transform: none; }
-}
-
-.format-menu-title {
-  padding: 7px 10px 6px;
-  color: var(--hint);
-  font-size: 13px;
-  font-weight: 600;
-}
+@keyframes menu-in { from { opacity: 0; transform: translateY(5px) scale(.98); } to { opacity: 1; transform: none; } }
+.format-menu-title { padding: 7px 10px 6px; color: var(--hint); font-size: 13px; font-weight: 600; }
+.format-menu-title.block-title { margin-top: 4px; border-top: 1px solid var(--separator); padding-top: 10px; }
 
 .menu-item {
   width: 100%;
@@ -204,28 +179,18 @@ button { font: inherit; color: inherit; border: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 
-.menu-item:active, .menu-item.active {
-  background: color-mix(in srgb, var(--button) 13%, transparent);
-}
-
-.menu-heading {
-  color: var(--text);
-  font-weight: 700;
-  text-align: center;
-  font-family: Georgia, "Times New Roman", serif;
-}
-
+.menu-item:active, .menu-item.active { background: color-mix(in srgb, var(--button) 13%, transparent); }
+.menu-heading { color: var(--text); font-weight: 700; text-align: center; font-family: Georgia, "Times New Roman", serif; }
 .menu-heading.h-1 { font-size: 23px; }
 .menu-heading.h-2 { font-size: 21px; }
 .menu-heading.h-3 { font-size: 19px; }
 .menu-heading.h-4 { font-size: 18px; }
 .menu-heading.h-5 { font-size: 17px; }
 .menu-heading.h-6 { font-size: 16px; }
-.menu-heading.paragraph-icon {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-}
+.menu-heading.paragraph-icon { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 18px; font-weight: 600; }
+.menu-heading.block-icon { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 16px; font-weight: 700; }
+.menu-heading.block-icon.pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; }
+.menu-heading.block-icon.divider { font-size: 22px; font-weight: 400; }
 .menu-item svg { color: var(--button); }
 
 .share-button {
@@ -241,7 +206,6 @@ button { font: inherit; color: inherit; border: 0; }
   box-shadow: 0 5px 18px color-mix(in srgb, var(--button) 32%, transparent);
   -webkit-tap-highlight-color: transparent;
 }
-
 .share-button:disabled { opacity: .6; cursor: default; }
 
 .error-banner {

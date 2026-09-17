@@ -24,17 +24,28 @@ function validateInitData(initData) {
   const hash = params.get('hash');
   if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Invalid Telegram initData.');
 
-  const pairs = [];
-  for (const [key, value] of params.entries()) {
-    if (key !== 'hash') pairs.push(`${key}=${value}`);
-  }
-  pairs.sort((a, b) => a.localeCompare(b));
-  const dataCheckString = pairs.join('\n');
+  // Telegram requires all fields except `hash`, sorted alphabetically,
+  // as key=value pairs separated by LF. URLSearchParams decodes the
+  // query-string values exactly as required for this data-check string.
+  const dataCheckString = [...params.entries()]
+    .filter(([key]) => key !== 'hash')
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
 
-  // Telegram: secret_key = HMAC-SHA-256(key=bot_token, data="WebAppData")
-  // Then hash = HMAC-SHA-256(key=secret_key, data=data_check_string).
-  const secret = crypto.createHmac('sha256', BOT_TOKEN).update('WebAppData').digest();
-  const expected = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
+  // IMPORTANT: Telegram's Mini App algorithm uses "WebAppData" as the
+  // HMAC key and the bot token as the HMAC message for the first HMAC.
+  // secret_key = HMAC-SHA-256(key="WebAppData", message=bot_token)
+  // hash       = HMAC-SHA-256(key=secret_key, message=data_check_string)
+  const secretKey = crypto
+    .createHmac('sha256', 'WebAppData')
+    .update(BOT_TOKEN, 'utf8')
+    .digest();
+
+  const expected = crypto
+    .createHmac('sha256', secretKey)
+    .update(dataCheckString, 'utf8')
+    .digest('hex');
 
   const received = Buffer.from(hash, 'hex');
   const calculated = Buffer.from(expected, 'hex');

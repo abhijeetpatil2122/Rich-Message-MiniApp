@@ -103,17 +103,23 @@ button { font: inherit; color: inherit; border: 0; }
 .heading-5 .editable { font-size: 21px; }
 .heading-6 .editable { font-size: 19px; }
 
-/* Telegram-style <pre><code> editor: preserve line breaks and allow both-axis scrolling. */
+/* Telegram-style <pre><code> editor. The textarea gives reliable native multiline input. */
 .preformatted {
   position: relative;
   min-width: 0;
 }
 
 .preformatted .editable {
+  width: 100%;
   min-height: 86px;
   max-height: min(52dvh, 390px);
   padding: 45px 14px 13px;
+  border: 0;
   border-radius: 12px;
+  outline: none;
+  resize: none;
+  display: block;
+  color: var(--text);
   background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 15px;
@@ -127,6 +133,8 @@ button { font: inherit; color: inherit; border: 0; }
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }
+
+.preformatted .editable::placeholder { color: var(--hint); opacity: 1; }
 
 .code-tools {
   position: absolute;

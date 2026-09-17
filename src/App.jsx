@@ -47,20 +47,6 @@ const CODE_LANGUAGES = [
 
 function clone(value) { return structuredClone(value); }
 
-function insertTextAtCaret(text) {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return false;
-  const range = selection.getRangeAt(0);
-  range.deleteContents();
-  const node = window.document.createTextNode(text);
-  range.insertNode(node);
-  range.setStartAfter(node);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  return true;
-}
-
 export default function App() {
   const [document, setDocument] = useState(createInitialDocument);
   const [activeId, setActiveId] = useState(document.blocks[0].id);
@@ -86,13 +72,9 @@ export default function App() {
 
   useEffect(() => {
     for (const block of document.blocks) {
+      if (block.type === 'pre') continue;
       const node = editorRefs.current.get(block.id);
-      if (!node) continue;
-      const current = block.type === 'pre' ? node.innerText.replace(/\r\n/g, '\n') : node.textContent || '';
-      if (current !== (block.text || '')) {
-        if (block.type === 'pre') node.innerText = block.text || '';
-        else node.textContent = block.text || '';
-      }
+      if (node && node.textContent !== (block.text || '')) node.textContent = block.text || '';
     }
   }, [document]);
 
@@ -104,6 +86,11 @@ export default function App() {
         const node = editorRefs.current.get(id);
         if (!node) return;
         node.focus();
+        if (typeof node.setSelectionRange === 'function') {
+          const end = node.value.length;
+          node.setSelectionRange(end, end);
+          return;
+        }
         const selection = window.getSelection();
         if (!selection) return;
         const range = window.document.createRange();
@@ -241,10 +228,11 @@ export default function App() {
   };
 
   const handleKeyDown = (event, block) => {
-    if (block.type === 'pre' && event.key === 'Enter') {
-      event.preventDefault();
-      const node = editorRefs.current.get(block.id);
-      if (node && insertTextAtCaret('\n')) updateText(block.id, node.innerText.replace(/\r\n/g, '\n'));
+    if (block.type === 'pre') {
+      if (event.key === 'Backspace' && block.text === '') {
+        event.preventDefault();
+        removeBlock(block.id);
+      }
       return;
     }
 
@@ -354,25 +342,37 @@ export default function App() {
                         )}
                       </div>
                     )}
-                    <div
-                      ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
-                      className="editable"
-                      contentEditable={block.type === 'pre' ? 'plaintext-only' : true}
-                      suppressContentEditableWarning
-                      spellCheck={block.type !== 'pre'}
-                      role="textbox"
-                      aria-multiline="true"
-                      aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Code block' : block.type === 'footer' ? 'Footer' : 'Paragraph'}
-                      data-placeholder={placeholder(block)}
-                      onFocus={() => setActiveId(block.id)}
-                      onInput={(event) => {
-                        const value = block.type === 'pre'
-                          ? event.currentTarget.innerText.replace(/\r\n/g, '\n')
-                          : event.currentTarget.textContent || '';
-                        updateText(block.id, value);
-                      }}
-                      onKeyDown={(event) => handleKeyDown(event, block)}
-                    />
+                    {block.type === 'pre' ? (
+                      <textarea
+                        ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
+                        className="editable code-editor"
+                        value={block.text}
+                        rows={4}
+                        wrap="off"
+                        spellCheck={false}
+                        aria-label="Code block"
+                        aria-multiline="true"
+                        placeholder={placeholder(block)}
+                        onFocus={() => setActiveId(block.id)}
+                        onChange={(event) => updateText(block.id, event.currentTarget.value)}
+                        onKeyDown={(event) => handleKeyDown(event, block)}
+                      />
+                    ) : (
+                      <div
+                        ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
+                        className="editable"
+                        contentEditable
+                        suppressContentEditableWarning
+                        spellCheck
+                        role="textbox"
+                        aria-multiline="true"
+                        aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'footer' ? 'Footer' : 'Paragraph'}
+                        data-placeholder={placeholder(block)}
+                        onFocus={() => setActiveId(block.id)}
+                        onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')}
+                        onKeyDown={(event) => handleKeyDown(event, block)}
+                      />
+                    )}
                   </>
                 )}
               </div>

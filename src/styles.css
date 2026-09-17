@@ -26,21 +26,21 @@ button { font: inherit; color: inherit; border: 0; }
 }
 
 .topbar {
-  height: 60px;
-  min-height: 60px;
+  height: 54px;
+  min-height: 54px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 6px 12px;
+  padding: 4px 10px;
   position: relative;
   z-index: 10;
 }
 
-.history-actions { display: flex; gap: 2px; }
+.history-actions { display: flex; gap: 0; }
 
 .icon-button, .tool-button {
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -63,7 +63,7 @@ button { font: inherit; color: inherit; border: 0; }
 .document-area {
   width: min(760px, 100%);
   margin: 0 auto;
-  padding: 22px 20px 120px;
+  padding: 16px 16px 105px;
 }
 
 .editor-block {
@@ -103,13 +103,15 @@ button { font: inherit; color: inherit; border: 0; }
 .heading-5 .editable { font-size: 21px; }
 .heading-6 .editable { font-size: 19px; }
 
-/* Telegram <pre><code> style preview. */
+/* Telegram-style <pre><code> editor: preserve line breaks and allow both-axis scrolling. */
 .preformatted {
   position: relative;
+  min-width: 0;
 }
 
 .preformatted .editable {
-  min-height: 52px;
+  min-height: 86px;
+  max-height: min(52dvh, 390px);
   padding: 45px 14px 13px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%);
@@ -117,6 +119,13 @@ button { font: inherit; color: inherit; border: 0; }
   font-size: 15px;
   line-height: 1.55;
   tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  overflow-wrap: normal;
+  word-break: normal;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
 .code-tools {
@@ -188,31 +197,62 @@ button { font: inherit; color: inherit; border: 0; }
   padding-top: 4px;
 }
 
-.divider-block { padding: 15px 0; }
+.divider-block { padding: 15px 0 8px; }
 .divider-line { height: 1px; width: 100%; background: var(--separator); }
 
+.divider-continuation {
+  padding: 0 0 8px 2px;
+  border-left: 2px solid transparent;
+}
+
+.continuation-editable {
+  min-height: 48px;
+  padding: 6px 0 8px;
+  outline: none;
+  border-bottom: 1px solid var(--separator);
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1.52;
+  caret-color: var(--button);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.continuation-editable:empty::before {
+  content: attr(data-placeholder);
+  color: var(--hint);
+  pointer-events: none;
+}
+
 .composer-bar {
-  min-height: 76px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  min-height: 68px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: color-mix(in srgb, var(--bg) 96%, transparent);
   border-top: 1px solid var(--separator);
   position: relative;
   z-index: 20;
 }
 
-.toolbar { min-width: 0; flex: 1; display: flex; align-items: center; gap: 1px; overflow: visible; }
-.tool-button { flex: 0 0 46px; color: var(--text); font-size: 21px; font-weight: 700; }
-.tool-button.heading-tool { font-family: Georgia, "Times New Roman", serif; font-size: 24px; }
+.toolbar {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  overflow: visible;
+}
+.tool-button { flex: 0 0 40px; color: var(--text); font-size: 20px; font-weight: 700; }
+.tool-button.heading-tool { font-family: Georgia, "Times New Roman", serif; font-size: 23px; }
 .tool-button.heading-tool.selected { color: var(--button); background: color-mix(in srgb, var(--button) 14%, transparent); }
 .format-wrap { position: relative; }
 
 .format-menu {
   position: absolute;
   left: -6px;
-  bottom: 56px;
+  bottom: 50px;
   width: 238px;
   max-height: min(70dvh, 520px);
   overflow-y: auto;
@@ -259,9 +299,9 @@ button { font: inherit; color: inherit; border: 0; }
 .menu-item svg { color: var(--button); }
 
 .share-button {
-  width: 54px;
-  height: 54px;
-  min-width: 54px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -277,7 +317,7 @@ button { font: inherit; color: inherit; border: 0; }
   position: fixed;
   left: 14px;
   right: 14px;
-  bottom: calc(82px + env(safe-area-inset-bottom));
+  bottom: calc(76px + env(safe-area-inset-bottom));
   z-index: 30;
   padding: 12px 15px;
   border-radius: 14px;
@@ -289,7 +329,7 @@ button { font: inherit; color: inherit; border: 0; }
 }
 
 @media (min-width: 700px) {
-  .topbar { padding-inline: 20px; }
-  .document-area { padding-inline: 32px; }
-  .composer-bar { padding-inline: 20px; }
+  .topbar { padding-inline: 16px; }
+  .document-area { padding-inline: 24px; }
+  .composer-bar { padding-inline: 16px; }
 }

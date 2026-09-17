@@ -18,22 +18,41 @@ async function telegram(method, body) {
 
 function validateInitData(initData) {
   if (typeof initData !== 'string' || !initData) throw new Error('Telegram initData is missing.');
+  if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is not configured.');
+
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
   if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Invalid Telegram initData.');
 
   const pairs = [];
-  for (const [key, value] of params.entries()) if (key !== 'hash') pairs.push(`${key}=${value}`);
-  pairs.sort();
+  for (const [key, value] of params.entries()) {
+    if (key !== 'hash') pairs.push(`${key}=${value}`);
+  }
+  pairs.sort((a, b) => a.localeCompare(b));
+  const dataCheckString = pairs.join('\n');
 
-  const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-  const expected = crypto.createHmac('sha256', secret).update(pairs.join('\n')).digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(expected, 'hex'))) throw new Error('Invalid Telegram initData signature.');
+  // Telegram: secret_key = HMAC-SHA-256(key=bot_token, data="WebAppData")
+  // Then hash = HMAC-SHA-256(key=secret_key, data=data_check_string).
+  const secret = crypto.createHmac('sha256', BOT_TOKEN).update('WebAppData').digest();
+  const expected = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
+
+  const received = Buffer.from(hash, 'hex');
+  const calculated = Buffer.from(expected, 'hex');
+  if (received.length !== calculated.length || !crypto.timingSafeEqual(received, calculated)) {
+    throw new Error('Invalid Telegram initData signature.');
+  }
 
   const authDate = Number(params.get('auth_date'));
-  if (!Number.isFinite(authDate) || Math.abs(Date.now() / 1000 - authDate) > 86400) throw new Error('Telegram initData has expired.');
+  if (!Number.isFinite(authDate) || Math.abs(Date.now() / 1000 - authDate) > 86400) {
+    throw new Error('Telegram initData has expired.');
+  }
 
-  const user = JSON.parse(params.get('user') || 'null');
+  let user;
+  try {
+    user = JSON.parse(params.get('user') || 'null');
+  } catch {
+    throw new Error('Invalid Telegram user data.');
+  }
   if (!user?.id) throw new Error('Telegram user is missing.');
   return user;
 }

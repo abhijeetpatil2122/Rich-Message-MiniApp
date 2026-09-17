@@ -52,9 +52,6 @@ button { font: inherit; color: inherit; border: 0; }
 .footer-block .editable { font-size: 15px; line-height: 1.45; color: var(--hint); padding-top: 4px; }
 .divider-block { padding: 15px 0 8px; }
 .divider-line { height: 1px; width: 100%; background: var(--separator); }
-.divider-continuation { padding: 0 0 8px 2px; border-left: 2px solid transparent; }
-.continuation-editable { min-height: 48px; padding: 6px 0 8px; outline: none; border-bottom: 0; color: var(--text); font-size: 19px; line-height: 1.52; caret-color: var(--button); white-space: pre-wrap; overflow-wrap: anywhere; }
-.continuation-editable:empty::before { content: attr(data-placeholder); color: var(--hint); pointer-events: none; }
 
 .composer-bar { min-height: 68px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--bg) 96%, transparent); border-top: 1px solid var(--separator); position: relative; z-index: 20; }
 .toolbar { min-width: 0; flex: 1; display: flex; align-items: center; gap: 1px; overflow: visible; }

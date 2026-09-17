@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+const APP_URL = process.env.APP_URL || 'https://rich-message-mini-app.vercel.app/';
 const MAX_BLOCKS = 500;
 const MAX_TEXT = 32768;
 
@@ -14,6 +16,50 @@ async function telegram(method, body) {
   const data = await response.json();
   if (!data.ok) throw new Error(data.description || `Telegram ${method} failed.`);
   return data.result;
+}
+
+function validateWebhookSecret(request) {
+  if (!WEBHOOK_SECRET) return true;
+  return request.headers['x-telegram-bot-api-secret-token'] === WEBHOOK_SECRET;
+}
+
+function richAppKeyboard() {
+  return {
+    inline_keyboard: [[
+      {
+        text: '✏️ Open Rich Message Editor',
+        web_app: { url: APP_URL },
+      },
+    ]],
+  };
+}
+
+async function handleBotUpdate(update) {
+  const message = update?.message;
+  const text = typeof message?.text === 'string' ? message.text.trim() : '';
+  const chat = message?.chat;
+
+  if (!chat || chat.type !== 'private' || !text) return;
+
+  // Accept /start and /start <payload> while keeping the launcher identical.
+  const command = text.split(/\s+/, 1)[0].split('@', 1)[0].toLowerCase();
+
+  if (command === '/start') {
+    await telegram('sendMessage', {
+      chat_id: chat.id,
+      text: '👋 Welcome!\n\nCreate and send Telegram Rich Messages directly from the Mini App.',
+      reply_markup: richAppKeyboard(),
+    });
+    return;
+  }
+
+  if (command === '/testrich') {
+    await telegram('sendMessage', {
+      chat_id: chat.id,
+      text: '🧪 Rich Message Mini App test launcher:',
+      reply_markup: richAppKeyboard(),
+    });
+  }
 }
 
 function validateInitData(initData) {
@@ -103,12 +149,25 @@ function validateDocument(input) {
 }
 
 export default async function handler(request, response) {
-  if (request.method === 'GET') return response.status(200).json({ ok: true, service: 'rich-message-send' });
+  if (request.method === 'GET') return response.status(200).json({ ok: true, service: 'rich-message-bot' });
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed.' });
 
   try {
-    const user = validateInitData(request.body?.initData);
-    const blocks = validateDocument(request.body?.document);
+    const body = request.body || {};
+
+    // The same Vercel function handles both the Mini App API request and the
+    // Telegram webhook, so no second server or hosting process is required.
+    if (!body.initData && body.update_id !== undefined) {
+      if (!validateWebhookSecret(request)) {
+        return response.status(401).json({ ok: false, error: 'Unauthorized webhook request.' });
+      }
+
+      await handleBotUpdate(body);
+      return response.status(200).json({ ok: true });
+    }
+
+    const user = validateInitData(body.initData);
+    const blocks = validateDocument(body.document);
 
     const result = await telegram('sendRichMessage', {
       chat_id: user.id,
@@ -117,7 +176,7 @@ export default async function handler(request, response) {
 
     return response.status(200).json({ ok: true, message_id: result?.message_id || null });
   } catch (error) {
-    console.error('rich message send error', error);
+    console.error('telegram handler error', error);
 
     if (error?.code === 'INVALID_INIT_DATA_SIGNATURE') {
       // Safe diagnostic: never log or return the initData, bot token, or hashes.
@@ -133,6 +192,6 @@ export default async function handler(request, response) {
       });
     }
 
-    return response.status(400).json({ ok: false, error: error?.message || 'Could not send Rich Message.' });
+    return response.status(400).json({ ok: false, error: error?.message || 'Telegram request failed.' });
   }
 }

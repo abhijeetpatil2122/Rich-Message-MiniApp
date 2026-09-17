@@ -21,12 +21,37 @@ const BLOCK_OPTIONS = [
   { type: 'divider', label: 'Divider', icon: '—' },
 ];
 
+const CODE_LANGUAGES = [
+  { value: '', label: 'Plain text' },
+  { value: 'python', label: 'Python' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'json', label: 'JSON' },
+  { value: 'bash', label: 'Bash / Shell' },
+  { value: 'sql', label: 'SQL' },
+  { value: 'java', label: 'Java' },
+  { value: 'c', label: 'C' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'csharp', label: 'C#' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'php', label: 'PHP' },
+  { value: 'kotlin', label: 'Kotlin' },
+  { value: 'swift', label: 'Swift' },
+  { value: 'xml', label: 'XML' },
+  { value: 'yaml', label: 'YAML' },
+  { value: 'markdown', label: 'Markdown' },
+];
+
 function clone(value) { return structuredClone(value); }
 
 export default function App() {
   const [document, setDocument] = useState(createInitialDocument);
   const [activeId, setActiveId] = useState(document.blocks[0].id);
   const [formatOpen, setFormatOpen] = useState(false);
+  const [languageOpenId, setLanguageOpenId] = useState(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -87,13 +112,16 @@ export default function App() {
   const changeType = (type, size = null) => {
     if (type === 'divider') {
       const index = document.blocks.findIndex((block) => block.id === activeId);
+      if (index < 0) return;
+
+      // A divider is a standalone structural block. Do not create an extra paragraph
+      // here; the user can press Enter in the surrounding text block when they want to continue.
       const divider = createBlock('divider');
-      const nextBlock = createBlock('paragraph');
       const blocks = [...document.blocks];
-      blocks.splice(index + 1, 0, divider, nextBlock);
+      blocks.splice(index + 1, 0, divider);
       commit({ ...document, blocks });
-      setActiveId(nextBlock.id);
-      pendingFocus.current = nextBlock.id;
+      setActiveId(activeId);
+      setLanguageOpenId(null);
     } else {
       commit({
         ...document,
@@ -106,10 +134,22 @@ export default function App() {
           return block;
         }),
       });
+      setLanguageOpenId(null);
       requestAnimationFrame(() => editorRefs.current.get(activeId)?.focus());
     }
     setFormatOpen(false);
     tg()?.HapticFeedback?.selectionChanged?.();
+  };
+
+  const setCodeLanguage = (id, language) => {
+    commit({
+      ...document,
+      blocks: document.blocks.map((block) => block.id === id ? { ...block, language } : block),
+    });
+    setLanguageOpenId(null);
+    setActiveId(id);
+    tg()?.HapticFeedback?.selectionChanged?.();
+    requestAnimationFrame(() => editorRefs.current.get(id)?.focus());
   };
 
   const insertAfter = (id) => {
@@ -119,6 +159,7 @@ export default function App() {
     commit({ ...document, blocks });
     setActiveId(nextBlock.id);
     pendingFocus.current = nextBlock.id;
+    setLanguageOpenId(null);
   };
 
   const removeBlock = (id) => {
@@ -128,6 +169,7 @@ export default function App() {
     commit({ ...document, blocks: document.blocks.filter((block) => block.id !== id) });
     setActiveId(nextActive.id);
     if (nextActive.type !== 'divider') pendingFocus.current = nextActive.id;
+    setLanguageOpenId(null);
   };
 
   const undo = () => {
@@ -138,6 +180,7 @@ export default function App() {
     setDocument(previous);
     setActiveId(previous.blocks.find((block) => block.id === activeId)?.id || previous.blocks[0].id);
     setFormatOpen(false);
+    setLanguageOpenId(null);
     setHistoryVersion((value) => value + 1);
   };
 
@@ -149,6 +192,7 @@ export default function App() {
     setDocument(next);
     setActiveId(next.blocks.find((block) => block.id === activeId)?.id || next.blocks[0].id);
     setFormatOpen(false);
+    setLanguageOpenId(null);
     setHistoryVersion((value) => value + 1);
   };
 
@@ -209,8 +253,6 @@ export default function App() {
     return 'Write here…';
   };
 
-  const isEditable = activeBlock?.type !== 'divider';
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -220,26 +262,57 @@ export default function App() {
         </div>
       </header>
 
-      <section className="editor" onClick={() => setFormatOpen(false)}>
+      <section className="editor" onClick={() => { setFormatOpen(false); setLanguageOpenId(null); }}>
         <div className="document-area">
           {document.blocks.map((block) => (
             <div key={block.id} className={`editor-block ${blockClass(block)} ${activeId === block.id ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); setActiveId(block.id); }}>
               {block.type === 'divider' ? (
                 <div className="divider-line" role="separator" aria-label="Divider" />
               ) : (
-                <div
-                  ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
-                  className="editable"
-                  contentEditable
-                  suppressContentEditableWarning
-                  spellCheck={block.type !== 'pre'}
-                  role="textbox"
-                  aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Code block' : block.type === 'footer' ? 'Footer' : 'Paragraph'}
-                  data-placeholder={placeholder(block)}
-                  onFocus={() => setActiveId(block.id)}
-                  onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')}
-                  onKeyDown={(event) => handleKeyDown(event, block)}
-                />
+                <>
+                  {block.type === 'pre' && (
+                    <div className="code-tools" onClick={(event) => event.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="code-language-button"
+                        aria-label="Set code language"
+                        aria-expanded={languageOpenId === block.id}
+                        onClick={() => { setActiveId(block.id); setLanguageOpenId((openId) => openId === block.id ? null : block.id); setFormatOpen(false); }}
+                      >
+                        {CODE_LANGUAGES.find((language) => language.value === block.language)?.label || block.language || 'Language'}
+                        <span className="code-language-chevron">⌄</span>
+                      </button>
+                      {languageOpenId === block.id && (
+                        <div className="code-language-menu" onClick={(event) => event.stopPropagation()}>
+                          {CODE_LANGUAGES.map((language) => (
+                            <button
+                              type="button"
+                              key={language.value || 'plain'}
+                              className={`code-language-option ${block.language === language.value ? 'active' : ''}`}
+                              onClick={() => setCodeLanguage(block.id, language.value)}
+                            >
+                              <span>{language.label}</span>
+                              {block.language === language.value && <Icon name="check" size={18} />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div
+                    ref={(node) => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }}
+                    className="editable"
+                    contentEditable
+                    suppressContentEditableWarning
+                    spellCheck={block.type !== 'pre'}
+                    role="textbox"
+                    aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Code block' : block.type === 'footer' ? 'Footer' : 'Paragraph'}
+                    data-placeholder={placeholder(block)}
+                    onFocus={() => setActiveId(block.id)}
+                    onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')}
+                    onKeyDown={(event) => handleKeyDown(event, block)}
+                  />
+                </>
               )}
             </div>
           ))}
@@ -251,7 +324,7 @@ export default function App() {
       <footer className="composer-bar">
         <div className="toolbar">
           <div className="format-wrap">
-            <button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text and block formatting" aria-expanded={formatOpen} onClick={(event) => { event.stopPropagation(); setFormatOpen((open) => !open); }}>H</button>
+            <button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text and block formatting" aria-expanded={formatOpen} onClick={(event) => { event.stopPropagation(); setLanguageOpenId(null); setFormatOpen((open) => !open); }}>H</button>
             {formatOpen && <div className="format-menu" onClick={(event) => event.stopPropagation()}>
               <div className="format-menu-title">Text format</div>
               <button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}><span className="menu-heading paragraph-icon">P</span><span>Paragraph</span>{activeBlock?.type === 'paragraph' && <Icon name="check" size={21} />}</button>

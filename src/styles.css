@@ -26,27 +26,24 @@ button { font: inherit; color: inherit; border: 0; }
 }
 
 .topbar {
-  height: 68px;
-  min-height: 68px;
+  height: 60px;
+  min-height: 60px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
+  justify-content: flex-start;
+  padding: 6px 12px;
   position: relative;
   z-index: 10;
 }
 
 .history-actions {
   display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 24px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  gap: 2px;
 }
 
 .icon-button, .tool-button {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -55,9 +52,14 @@ button { font: inherit; color: inherit; border: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 
-.icon-button:active, .tool-button:active { transform: scale(.94); }
-.icon-button.muted { opacity: .38; }
-.icon-button:disabled, .tool-button:disabled { cursor: default; }
+.icon-button:active, .tool-button:active, .share-button:active, .menu-item:active {
+  transform: scale(.94);
+}
+
+.icon-button:disabled {
+  cursor: default;
+  opacity: .28;
+}
 
 .editor {
   flex: 1;
@@ -70,7 +72,7 @@ button { font: inherit; color: inherit; border: 0; }
 .document-area {
   width: min(760px, 100%);
   margin: 0 auto;
-  padding: 30px 20px 120px;
+  padding: 22px 20px 120px;
 }
 
 .editor-block {
@@ -87,7 +89,10 @@ button { font: inherit; color: inherit; border: 0; }
   min-height: 1.55em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
   caret-color: var(--button);
+  direction: ltr;
+  unicode-bidi: plaintext;
 }
 
 .editable:empty::before {
@@ -128,26 +133,32 @@ button { font: inherit; color: inherit; border: 0; }
   display: flex;
   align-items: center;
   gap: 1px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: visible;
 }
-.toolbar::-webkit-scrollbar { display: none; }
 
 .tool-button {
-  flex: 0 0 48px;
-  color: var(--hint);
-  font-size: 23px;
+  flex: 0 0 46px;
+  color: var(--text);
+  font-size: 21px;
+  font-weight: 700;
 }
-.tool-button.text-tool { font-size: 24px; font-weight: 600; color: var(--text); }
-.tool-button.text-tool.selected { color: var(--button); background: color-mix(in srgb, var(--button) 14%, transparent); }
-.tool-button.ai { font-size: 27px; color: var(--text); }
-.tool-button.add { color: var(--hint); }
+
+.tool-button.heading-tool {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 24px;
+}
+
+.tool-button.heading-tool.selected {
+  color: var(--button);
+  background: color-mix(in srgb, var(--button) 14%, transparent);
+}
 
 .format-wrap { position: relative; }
+
 .format-menu {
   position: absolute;
-  left: -8px;
-  bottom: 57px;
+  left: -6px;
+  bottom: 56px;
   width: 238px;
   padding: 7px;
   border-radius: 18px;
@@ -157,23 +168,45 @@ button { font: inherit; color: inherit; border: 0; }
   transform-origin: bottom left;
   animation: menu-in .12s ease-out;
 }
-@keyframes menu-in { from { opacity: 0; transform: translateY(5px) scale(.98); } to { opacity: 1; transform: none; } }
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(5px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.format-menu-title {
+  padding: 7px 10px 6px;
+  color: var(--hint);
+  font-size: 13px;
+  font-weight: 600;
+}
 
 .menu-item {
   width: 100%;
   min-height: 48px;
   padding: 7px 10px;
   display: grid;
-  grid-template-columns: 30px 1fr 22px;
+  grid-template-columns: 38px 1fr 22px;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   border-radius: 12px;
   background: transparent;
   text-align: left;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.menu-item:active, .menu-item.active { background: color-mix(in srgb, var(--button) 13%, transparent); }
-.menu-icon, .menu-heading { color: var(--hint); font-weight: 600; text-align: center; }
+
+.menu-item:active, .menu-item.active {
+  background: color-mix(in srgb, var(--button) 13%, transparent);
+}
+
+.menu-heading {
+  color: var(--text);
+  font-weight: 700;
+  text-align: center;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
 .menu-heading.h-1 { font-size: 23px; }
 .menu-heading.h-2 { font-size: 21px; }
 .menu-heading.h-3 { font-size: 19px; }
@@ -193,9 +226,10 @@ button { font: inherit; color: inherit; border: 0; }
   color: var(--button-text);
   cursor: pointer;
   box-shadow: 0 5px 18px color-mix(in srgb, var(--button) 32%, transparent);
+  -webkit-tap-highlight-color: transparent;
 }
-.share-button:active { transform: scale(.94); }
-.share-button:disabled { opacity: .6; }
+
+.share-button:disabled { opacity: .6; cursor: default; }
 
 .error-banner {
   position: fixed;

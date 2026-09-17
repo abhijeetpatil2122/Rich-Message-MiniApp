@@ -21,36 +21,39 @@ function validateInitData(initData) {
   if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is not configured.');
 
   const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Invalid Telegram initData.');
+  const receivedHash = params.get('hash');
+  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) {
+    throw new Error('Invalid Telegram initData.');
+  }
 
-  // Telegram requires all fields except `hash`, sorted alphabetically,
-  // as key=value pairs separated by LF. URLSearchParams decodes the
-  // query-string values exactly as required for this data-check string.
+  // Telegram signs the decoded query parameters, excluding `hash`, sorted by
+  // parameter name and joined with LF characters.
+  params.delete('hash');
+  params.sort();
   const dataCheckString = [...params.entries()]
-    .filter(([key]) => key !== 'hash')
-    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
 
-  // IMPORTANT: Telegram's Mini App algorithm uses "WebAppData" as the
-  // HMAC key and the bot token as the HMAC message for the first HMAC.
-  // secret_key = HMAC-SHA-256(key="WebAppData", message=bot_token)
-  // hash       = HMAC-SHA-256(key=secret_key, message=data_check_string)
+  // Official Mini App validation algorithm:
+  // secret_key = HMAC-SHA-256(key="WebAppData", data=bot_token)
+  // hash       = HMAC-SHA-256(key=secret_key, data=data_check_string)
   const secretKey = crypto
     .createHmac('sha256', 'WebAppData')
     .update(BOT_TOKEN, 'utf8')
     .digest();
 
-  const expected = crypto
+  const calculatedHash = crypto
     .createHmac('sha256', secretKey)
     .update(dataCheckString, 'utf8')
     .digest('hex');
 
-  const received = Buffer.from(hash, 'hex');
-  const calculated = Buffer.from(expected, 'hex');
+  const received = Buffer.from(receivedHash, 'hex');
+  const calculated = Buffer.from(calculatedHash, 'hex');
+
   if (received.length !== calculated.length || !crypto.timingSafeEqual(received, calculated)) {
-    throw new Error('Invalid Telegram initData signature.');
+    const error = new Error('Invalid Telegram initData signature.');
+    error.code = 'INVALID_INIT_DATA_SIGNATURE';
+    throw error;
   }
 
   const authDate = Number(params.get('auth_date'));
@@ -66,6 +69,15 @@ function validateInitData(initData) {
   }
   if (!user?.id) throw new Error('Telegram user is missing.');
   return user;
+}
+
+async function getBotIdentity() {
+  try {
+    const bot = await telegram('getMe', {});
+    return bot?.username ? `@${bot.username}` : null;
+  } catch {
+    return null;
+  }
 }
 
 function validateDocument(input) {
@@ -106,6 +118,21 @@ export default async function handler(request, response) {
     return response.status(200).json({ ok: true, message_id: result?.message_id || null });
   } catch (error) {
     console.error('rich message send error', error);
+
+    if (error?.code === 'INVALID_INIT_DATA_SIGNATURE') {
+      // Safe diagnostic: never log or return the initData, bot token, or hashes.
+      // If this bot identity differs from the bot that opened the Mini App,
+      // the signature can never validate because the signature is bot-specific.
+      const botIdentity = await getBotIdentity();
+      const suffix = botIdentity
+        ? ` Backend TELEGRAM_BOT_TOKEN belongs to ${botIdentity}. Make sure this is the same bot that opened this Mini App.`
+        : ' The backend TELEGRAM_BOT_TOKEN could not be verified with Telegram.';
+      return response.status(400).json({
+        ok: false,
+        error: `Invalid Telegram initData signature.${suffix}`,
+      });
+    }
+
     return response.status(400).json({ ok: false, error: error?.message || 'Could not send Rich Message.' });
   }
 }

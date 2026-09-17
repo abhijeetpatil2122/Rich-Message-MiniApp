@@ -26,10 +26,7 @@ function validateWebhookSecret(request) {
 function richAppKeyboard() {
   return {
     inline_keyboard: [[
-      {
-        text: '✏️ Open Rich Message Editor',
-        web_app: { url: APP_URL },
-      },
+      { text: '✏️ Open Rich Message Editor', web_app: { url: APP_URL } },
     ]],
   };
 }
@@ -38,12 +35,9 @@ async function handleBotUpdate(update) {
   const message = update?.message;
   const text = typeof message?.text === 'string' ? message.text.trim() : '';
   const chat = message?.chat;
-
   if (!chat || chat.type !== 'private' || !text) return;
 
-  // Accept /start and /start <payload> while keeping the launcher identical.
   const command = text.split(/\s+/, 1)[0].split('@', 1)[0].toLowerCase();
-
   if (command === '/start') {
     await telegram('sendMessage', {
       chat_id: chat.id,
@@ -52,7 +46,6 @@ async function handleBotUpdate(update) {
     });
     return;
   }
-
   if (command === '/testrich') {
     await telegram('sendMessage', {
       chat_id: chat.id,
@@ -68,31 +61,14 @@ function validateInitData(initData) {
 
   const params = new URLSearchParams(initData);
   const receivedHash = params.get('hash');
-  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) {
-    throw new Error('Invalid Telegram initData.');
-  }
+  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) throw new Error('Invalid Telegram initData.');
 
-  // Telegram signs the decoded query parameters, excluding `hash`, sorted by
-  // parameter name and joined with LF characters.
   params.delete('hash');
   params.sort();
-  const dataCheckString = [...params.entries()]
-    .map(([key, value]) => `${key}=${value}`)
-    .join('\n');
+  const dataCheckString = [...params.entries()].map(([key, value]) => `${key}=${value}`).join('\n');
 
-  // Official Mini App validation algorithm:
-  // secret_key = HMAC-SHA-256(key="WebAppData", data=bot_token)
-  // hash       = HMAC-SHA-256(key=secret_key, data=data_check_string)
-  const secretKey = crypto
-    .createHmac('sha256', 'WebAppData')
-    .update(BOT_TOKEN, 'utf8')
-    .digest();
-
-  const calculatedHash = crypto
-    .createHmac('sha256', secretKey)
-    .update(dataCheckString, 'utf8')
-    .digest('hex');
-
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN, 'utf8').digest();
+  const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString, 'utf8').digest('hex');
   const received = Buffer.from(receivedHash, 'hex');
   const calculated = Buffer.from(calculatedHash, 'hex');
 
@@ -108,11 +84,8 @@ function validateInitData(initData) {
   }
 
   let user;
-  try {
-    user = JSON.parse(params.get('user') || 'null');
-  } catch {
-    throw new Error('Invalid Telegram user data.');
-  }
+  try { user = JSON.parse(params.get('user') || 'null'); }
+  catch { throw new Error('Invalid Telegram user data.'); }
   if (!user?.id) throw new Error('Telegram user is missing.');
   return user;
 }
@@ -131,20 +104,34 @@ function validateDocument(input) {
   if (input.blocks.length > MAX_BLOCKS) throw new Error('Too many blocks.');
 
   const blocks = input.blocks
-    .filter((block) => block && typeof block.text === 'string' && block.text.length > 0)
+    .filter((block) => block && typeof block === 'object')
     .map((block) => {
+      if (block.type === 'divider') return { type: 'divider' };
+
+      if (typeof block.text !== 'string' || block.text.length === 0) return null;
+
       if (block.type === 'paragraph') return { type: 'paragraph', text: block.text };
+
       if (block.type === 'heading') {
         const size = Number(block.size);
         if (!Number.isInteger(size) || size < 1 || size > 6) throw new Error('Invalid heading size.');
-        // Bot API InputRichBlockSectionHeading is serialized with type="heading".
         return { type: 'heading', text: block.text, size };
       }
-      throw new Error('Unsupported block type.');
-    });
+
+      if (block.type === 'pre') {
+        const language = typeof block.language === 'string' ? block.language.trim() : '';
+        if (language.length > 100) throw new Error('Code language is too long.');
+        return { type: 'pre', text: block.text, ...(language ? { language } : {}) };
+      }
+
+      if (block.type === 'footer') return { type: 'footer', text: block.text };
+
+      throw new Error(`Unsupported block type: ${block.type || 'unknown'}.`);
+    })
+    .filter(Boolean);
 
   if (!blocks.length) throw new Error('Write something before sending.');
-  const textLength = blocks.reduce((total, block) => total + [...block.text].length, 0);
+  const textLength = blocks.reduce((total, block) => total + (block.text ? [...block.text].length : 0), 0);
   if (textLength > MAX_TEXT) throw new Error('Rich Message text is over Telegram’s 32,768 character limit.');
   return blocks;
 }
@@ -156,20 +143,14 @@ export default async function handler(request, response) {
   try {
     const body = request.body || {};
 
-    // The same Vercel function handles both the Mini App API request and the
-    // Telegram webhook, so no second server or hosting process is required.
     if (!body.initData && body.update_id !== undefined) {
-      if (!validateWebhookSecret(request)) {
-        return response.status(401).json({ ok: false, error: 'Unauthorized webhook request.' });
-      }
-
+      if (!validateWebhookSecret(request)) return response.status(401).json({ ok: false, error: 'Unauthorized webhook request.' });
       await handleBotUpdate(body);
       return response.status(200).json({ ok: true });
     }
 
     const user = validateInitData(body.initData);
     const blocks = validateDocument(body.document);
-
     const result = await telegram('sendRichMessage', {
       chat_id: user.id,
       rich_message: { blocks },
@@ -180,17 +161,11 @@ export default async function handler(request, response) {
     console.error('telegram handler error', error);
 
     if (error?.code === 'INVALID_INIT_DATA_SIGNATURE') {
-      // Safe diagnostic: never log or return the initData, bot token, or hashes.
-      // If this bot identity differs from the bot that opened the Mini App,
-      // the signature can never validate because the signature is bot-specific.
       const botIdentity = await getBotIdentity();
       const suffix = botIdentity
         ? ` Backend TELEGRAM_BOT_TOKEN belongs to ${botIdentity}. Make sure this is the same bot that opened this Mini App.`
         : ' The backend TELEGRAM_BOT_TOKEN could not be verified with Telegram.';
-      return response.status(400).json({
-        ok: false,
-        error: `Invalid Telegram initData signature.${suffix}`,
-      });
+      return response.status(400).json({ ok: false, error: `Invalid Telegram initData signature.${suffix}` });
     }
 
     return response.status(400).json({ ok: false, error: error?.message || 'Telegram request failed.' });

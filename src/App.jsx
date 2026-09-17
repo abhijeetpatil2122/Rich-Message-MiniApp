@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createBlock, createInitialDocument, documentTextLength, toTelegramRichMessage } from './lib/document.js';
-import { buildInlineQuery, INLINE_QUERY_LIMIT, queryLength } from './lib/codec.js';
 
 const tg = () => window.Telegram?.WebApp;
 
@@ -94,7 +93,6 @@ export default function App() {
   const canUndo = history.current.past.length > 0;
   const canRedo = history.current.future.length > 0;
 
-  // historyVersion is intentionally read here so history mutations trigger a render.
   void historyVersion;
 
   const commit = (next, { historyEntry = true, coalesce = false } = {}) => {
@@ -211,16 +209,25 @@ export default function App() {
 
     setSharing(true);
     try {
-      const query = await buildInlineQuery(document);
-      if (queryLength(query) > INLINE_QUERY_LIMIT) {
-        setError('This message is too large for Telegram inline mode. Shorten it and try again.');
-        return;
+      // Do not put the Rich Message JSON in Telegram's inline query.
+      // The inline query is only a short random reference; the full document
+      // is stored temporarily on the server and resolved by the inline webhook.
+      const response = await fetch('/api/share', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ document }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.query) {
+        throw new Error(data.error || 'Could not prepare the Rich Message.');
       }
+
       app.HapticFeedback?.impactOccurred?.('light');
-      app.switchInlineQuery(query, ['users', 'groups', 'channels']);
+      app.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
     } catch (cause) {
       console.error(cause);
-      setError('Could not prepare the inline message.');
+      setError(cause?.message || 'Could not prepare the Rich Message.');
     } finally {
       setSharing(false);
     }

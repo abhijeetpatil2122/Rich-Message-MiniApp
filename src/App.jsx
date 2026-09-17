@@ -5,16 +5,24 @@ import { buildInlineQuery, INLINE_QUERY_LIMIT, queryLength } from './lib/codec.j
 const tg = () => window.Telegram?.WebApp;
 
 function Icon({ name, size = 24 }) {
-  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
-  const paths = {
-    back: <><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></>,
-    undo: <><path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/></>,
-    redo: <><path d="m15 7 5 5-5 5"/><path d="M20 12H10a6 6 0 0 0-6 6"/></>,
-    plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
-    send: <><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></>,
-    chevron: <path d="m6 9 6 6 6-6"/>,
-    check: <path d="m5 12 4 4L19 6"/>,
+  const common = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
   };
+
+  const paths = {
+    undo: <><path d="M9 7 4 12l5 5" /><path d="M4 12h10a6 6 0 0 1 6 6" /></>,
+    redo: <><path d="m15 7 5 5-5 5" /><path d="M20 12H10a6 6 0 0 0-6 6" /></>,
+    send: <><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+  };
+
   return <svg {...common}>{paths[name]}</svg>;
 }
 
@@ -27,14 +35,21 @@ const HEADING_OPTIONS = [
   { size: 6, label: 'Heading 6' },
 ];
 
+function clone(value) {
+  return structuredClone(value);
+}
+
 export default function App() {
   const [document, setDocument] = useState(createInitialDocument);
   const [activeId, setActiveId] = useState(document.blocks[0].id);
   const [formatOpen, setFormatOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState('');
+  const [historyVersion, setHistoryVersion] = useState(0);
+
   const editorRefs = useRef(new Map());
   const pendingFocus = useRef(null);
+  const history = useRef({ past: [], future: [], lastInputAt: 0 });
 
   useEffect(() => {
     const app = tg();
@@ -45,66 +60,121 @@ export default function App() {
     app.setBackgroundColor('bg_color');
   }, []);
 
+  // Never re-render the editable element's children from React on every keystroke.
+  // That is what caused the caret to jump to the beginning ("hi |" -> "|ih").
+  useEffect(() => {
+    for (const block of document.blocks) {
+      const node = editorRefs.current.get(block.id);
+      if (!node) continue;
+      const value = node.textContent || '';
+      if (value !== block.text) node.textContent = block.text;
+    }
+  }, [document]);
+
   useEffect(() => {
     if (!pendingFocus.current) return;
     const id = pendingFocus.current;
     pendingFocus.current = null;
+
     requestAnimationFrame(() => {
       const node = editorRefs.current.get(id);
       if (!node) return;
       node.focus();
-      const range = window.getSelection();
-      range?.selectAllChildren(node);
-      range?.collapse(false);
+      const selection = window.getSelection();
+      if (!selection) return;
+      const range = window.document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
     });
   }, [document]);
 
   const activeBlock = document.blocks.find((block) => block.id === activeId) || document.blocks[0];
+  const canUndo = history.current.past.length > 0;
+  const canRedo = history.current.future.length > 0;
 
-  const updateText = (id, text) => {
-    setDocument((current) => ({
-      ...current,
-      blocks: current.blocks.map((block) => (block.id === id ? { ...block, text } : block)),
-    }));
+  // historyVersion is intentionally read here so history mutations trigger a render.
+  void historyVersion;
+
+  const commit = (next, { historyEntry = true, coalesce = false } = {}) => {
+    if (historyEntry) {
+      const now = Date.now();
+      const shouldRecord = !coalesce || now - history.current.lastInputAt > 650;
+      if (shouldRecord) history.current.past.push(clone(document));
+      history.current.lastInputAt = now;
+      history.current.future = [];
+    } else {
+      history.current.lastInputAt = 0;
+    }
+
+    setDocument(next);
+    setHistoryVersion((value) => value + 1);
   };
 
-  const changeType = (type, size = 1) => {
-    setDocument((current) => ({
-      ...current,
-      blocks: current.blocks.map((block) =>
-        block.id === activeId
-          ? type === 'heading'
-            ? { ...block, type, size }
-            : { id: block.id, type: 'paragraph', text: block.text }
-          : block,
+  const updateText = (id, text) => {
+    const next = {
+      ...document,
+      blocks: document.blocks.map((block) => (block.id === id ? { ...block, text } : block)),
+    };
+    commit(next, { coalesce: true });
+  };
+
+  const changeType = (size) => {
+    const next = {
+      ...document,
+      blocks: document.blocks.map((block) =>
+        block.id === activeId ? { ...block, type: 'heading', size } : block,
       ),
-    }));
+    };
+    commit(next);
     setFormatOpen(false);
-    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+    tg()?.HapticFeedback?.selectionChanged?.();
+    requestAnimationFrame(() => editorRefs.current.get(activeId)?.focus());
   };
 
   const insertAfter = (id) => {
-    const next = createBlock('paragraph');
-    setDocument((current) => {
-      const index = current.blocks.findIndex((block) => block.id === id);
-      const blocks = [...current.blocks];
-      blocks.splice(index + 1, 0, next);
-      return { ...current, blocks };
-    });
-    setActiveId(next.id);
-    pendingFocus.current = next.id;
+    const nextBlock = createBlock('paragraph');
+    const index = document.blocks.findIndex((block) => block.id === id);
+    const blocks = [...document.blocks];
+    blocks.splice(index + 1, 0, nextBlock);
+
+    commit({ ...document, blocks });
+    setActiveId(nextBlock.id);
+    pendingFocus.current = nextBlock.id;
   };
 
   const removeBlock = (id) => {
     if (document.blocks.length === 1) return;
     const index = document.blocks.findIndex((block) => block.id === id);
     const nextActive = document.blocks[index - 1] || document.blocks[index + 1];
-    setDocument((current) => ({
-      ...current,
-      blocks: current.blocks.filter((block) => block.id !== id),
-    }));
+    const blocks = document.blocks.filter((block) => block.id !== id);
+
+    commit({ ...document, blocks });
     setActiveId(nextActive.id);
     pendingFocus.current = nextActive.id;
+  };
+
+  const undo = () => {
+    const previous = history.current.past.pop();
+    if (!previous) return;
+    history.current.future.push(clone(document));
+    history.current.lastInputAt = 0;
+    setDocument(previous);
+    setActiveId(previous.blocks.find((block) => block.id === activeId)?.id || previous.blocks[0].id);
+    setFormatOpen(false);
+    setHistoryVersion((value) => value + 1);
+  };
+
+  const redo = () => {
+    const next = history.current.future.pop();
+    if (!next) return;
+    history.current.past.push(clone(document));
+    history.current.lastInputAt = 0;
+    setDocument(next);
+    setActiveId(next.blocks.find((block) => block.id === activeId)?.id || next.blocks[0].id);
+    setFormatOpen(false);
+    setHistoryVersion((value) => value + 1);
   };
 
   const handleKeyDown = (event, block) => {
@@ -159,12 +229,13 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <button className="icon-button" aria-label="Back" onClick={() => tg()?.close()}>
-          <Icon name="back" />
-        </button>
         <div className="history-actions">
-          <button className="icon-button muted" aria-label="Undo" disabled><Icon name="undo" /></button>
-          <button className="icon-button muted" aria-label="Redo" disabled><Icon name="redo" /></button>
+          <button className="icon-button" aria-label="Undo" onClick={undo} disabled={!canUndo}>
+            <Icon name="undo" />
+          </button>
+          <button className="icon-button" aria-label="Redo" onClick={redo} disabled={!canRedo}>
+            <Icon name="redo" />
+          </button>
         </div>
       </header>
 
@@ -190,13 +261,11 @@ export default function App() {
                 spellCheck
                 role="textbox"
                 aria-label={block.type === 'heading' ? `Heading ${block.size}` : 'Paragraph'}
-                data-placeholder={block.type === 'heading' ? `Heading ${block.size}` : document.blocks.length === 1 ? 'Start writing…' : 'Write something…'}
+                data-placeholder={block.type === 'heading' ? `Heading ${block.size}` : 'Write here…'}
                 onFocus={() => setActiveId(block.id)}
                 onInput={(event) => updateText(block.id, event.currentTarget.textContent || '')}
                 onKeyDown={(event) => handleKeyDown(event, block)}
-              >
-                {block.text}
-              </div>
+              />
             </div>
           ))}
         </div>
@@ -206,38 +275,37 @@ export default function App() {
 
       <footer className="composer-bar">
         <div className="toolbar">
-          <button className="tool-button ai" aria-label="Assistant" disabled>✦</button>
-          <button className="tool-button" aria-label="Emoji" disabled>☺</button>
           <div className="format-wrap">
             <button
-              className={`tool-button text-tool ${formatOpen ? 'selected' : ''}`}
-              aria-label="Text formatting"
+              className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`}
+              aria-label="Heading formatting"
               aria-expanded={formatOpen}
               onClick={(event) => {
                 event.stopPropagation();
                 setFormatOpen((open) => !open);
               }}
-            >Aa</button>
+            >
+              H
+            </button>
             {formatOpen && (
               <div className="format-menu" onClick={(event) => event.stopPropagation()}>
-                <button className={!activeBlock || activeBlock.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}>
-                  <span className="menu-icon">T</span><span>Text</span>{activeBlock?.type === 'paragraph' && <Icon name="check" size={21} />}
-                </button>
+                <div className="format-menu-title">Heading</div>
                 {HEADING_OPTIONS.map((option) => (
                   <button
                     key={option.size}
                     className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'}
-                    onClick={() => changeType('heading', option.size)}
+                    onClick={() => changeType(option.size)}
                   >
-                    <span className={`menu-heading h-${option.size}`}>H</span><span>{option.label}</span>
+                    <span className={`menu-heading h-${option.size}`}>H{option.size}</span>
+                    <span>{option.label}</span>
                     {activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21} />}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <button className="tool-button add" aria-label="Add paragraph" onClick={() => insertAfter(activeId)}><Icon name="plus" size={22} /></button>
         </div>
+
         <button className="share-button" aria-label="Share with inline mode" onClick={share} disabled={sharing}>
           <Icon name="send" size={25} />
         </button>

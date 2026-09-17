@@ -49,7 +49,7 @@ button { font: inherit; color: inherit; border: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 
-.icon-button:active, .tool-button:active, .share-button:active, .menu-item:active { transform: scale(.94); }
+.icon-button:active, .tool-button:active, .share-button:active, .menu-item:active, .code-language-button:active, .code-language-option:active { transform: scale(.94); }
 .icon-button:disabled { cursor: default; opacity: .28; }
 
 .editor {
@@ -103,11 +103,14 @@ button { font: inherit; color: inherit; border: 0; }
 .heading-5 .editable { font-size: 21px; }
 .heading-6 .editable { font-size: 19px; }
 
-/* Telegram <pre><code> style preview. Keep code blocks visually distinct while preserving
-   the same editable/plain-text behavior as the other block types. */
+/* Telegram <pre><code> style preview. */
+.preformatted {
+  position: relative;
+}
+
 .preformatted .editable {
   min-height: 52px;
-  padding: 13px 14px;
+  padding: 45px 14px 13px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -115,6 +118,68 @@ button { font: inherit; color: inherit; border: 0; }
   line-height: 1.55;
   tab-size: 2;
 }
+
+.code-tools {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 3;
+}
+
+.code-language-button {
+  min-height: 28px;
+  max-width: 180px;
+  padding: 4px 9px 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--hint);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.code-language-button:hover { color: var(--text); background: color-mix(in srgb, var(--text) 13%, transparent); }
+.code-language-chevron { font-size: 14px; line-height: .7; transform: translateY(-1px); }
+
+.code-language-menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  width: 190px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 98%, black 2%);
+  border: 1px solid var(--separator);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  animation: menu-in .12s ease-out;
+}
+
+.code-language-option {
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.code-language-option:hover, .code-language-option.active { background: color-mix(in srgb, var(--button) 13%, transparent); }
+.code-language-option svg { color: var(--button); flex: 0 0 auto; }
 
 .footer-block .editable {
   font-size: 15px;

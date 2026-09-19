@@ -103,35 +103,67 @@ function validateDocument(input) {
   if (!input || input.version !== 1 || !Array.isArray(input.blocks)) throw new Error('Invalid document.');
   if (input.blocks.length > MAX_BLOCKS) throw new Error('Too many blocks.');
 
+  const RICH_TEXT_TYPES = new Set(['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'code', 'url']);
+
+  // Bot API 10.1 RichText is a union: a plain string, an array of RichText,
+  // or a tagged { type, text } node (plus `url` for links). Recurses with a
+  // depth guard since this is untrusted client input.
+  function normalizeRichText(value, depthLeft = 20) {
+    if (typeof value === 'string') return value;
+    if (depthLeft <= 0) throw new Error('Rich text is nested too deeply.');
+    if (Array.isArray(value)) return value.map((part) => normalizeRichText(part, depthLeft - 1));
+    if (value && typeof value === 'object') {
+      if (!RICH_TEXT_TYPES.has(value.type)) throw new Error(`Unsupported inline format: ${value.type || 'unknown'}.`);
+      const text = normalizeRichText(value.text, depthLeft - 1);
+      if (value.type === 'url') {
+        if (typeof value.url !== 'string' || !/^https?:\/\//i.test(value.url)) throw new Error('Links must be http(s) URLs.');
+        if (value.url.length > 2048) throw new Error('Link URL is too long.');
+        return { type: 'url', text, url: value.url };
+      }
+      return { type: value.type, text };
+    }
+    throw new Error('Invalid rich text value.');
+  }
+
+  function richTextLength(value) {
+    if (typeof value === 'string') return [...value].length;
+    if (Array.isArray(value)) return value.reduce((total, part) => total + richTextLength(part), 0);
+    return richTextLength(value.text);
+  }
+
   const blocks = input.blocks
     .filter((block) => block && typeof block === 'object')
     .map((block) => {
       if (block.type === 'divider') return { type: 'divider' };
 
-      if (typeof block.text !== 'string' || block.text.length === 0) return null;
-
-      if (block.type === 'paragraph') return { type: 'paragraph', text: block.text };
-
-      if (block.type === 'heading') {
-        const size = Number(block.size);
-        if (!Number.isInteger(size) || size < 1 || size > 6) throw new Error('Invalid heading size.');
-        return { type: 'heading', text: block.text, size };
-      }
-
       if (block.type === 'pre') {
+        if (typeof block.text !== 'string' || block.text.length === 0) return null;
         const language = typeof block.language === 'string' ? block.language.trim() : '';
         if (language.length > 100) throw new Error('Code language is too long.');
         return { type: 'pre', text: block.text, ...(language ? { language } : {}) };
       }
 
-      if (block.type === 'footer') return { type: 'footer', text: block.text };
+      if (!['paragraph', 'heading', 'footer'].includes(block.type)) throw new Error(`Unsupported block type: ${block.type || 'unknown'}.`);
 
-      throw new Error(`Unsupported block type: ${block.type || 'unknown'}.`);
+      const text = normalizeRichText(block.text);
+      if (richTextLength(text) === 0) return null;
+
+      if (block.type === 'heading') {
+        const size = Number(block.size);
+        if (!Number.isInteger(size) || size < 1 || size > 6) throw new Error('Invalid heading size.');
+        return { type: 'heading', text, size };
+      }
+
+      return { type: block.type, text };
     })
     .filter(Boolean);
 
   if (!blocks.length) throw new Error('Write something before sending.');
-  const textLength = blocks.reduce((total, block) => total + (block.text ? [...block.text].length : 0), 0);
+  const textLength = blocks.reduce((total, block) => {
+    if (block.type === 'divider') return total;
+    if (block.type === 'pre') return total + [...block.text].length;
+    return total + richTextLength(block.text);
+  }, 0);
   if (textLength > MAX_TEXT) throw new Error('Rich Message text is over Telegram’s 32,768 character limit.');
   return blocks;
 }

@@ -8,6 +8,7 @@
   --button: var(--tg-theme-button-color, #3f67d8);
   --button-text: var(--tg-theme-button-text-color, #fff);
   --separator: color-mix(in srgb, var(--text) 9%, transparent);
+  --destructive: var(--tg-theme-destructive-text-color, #ec3942);
 }
 
 * { box-sizing: border-box; }
@@ -20,7 +21,7 @@ button { font: inherit; color: inherit; border: 0; }
 .history-actions { display: flex; gap: 0; }
 .icon-button, .tool-button { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .icon-button:active, .tool-button:active, .share-button:active, .menu-item:active, .code-language-button:active, .code-language-option:active { transform: scale(.94); }
-.icon-button:disabled { cursor: default; opacity: .28; }
+.icon-button:disabled, .tool-button:disabled { cursor: default; opacity: .28; }
 
 .editor { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .document-area { width: min(760px, 100%); min-height: 100%; margin: 0 auto; padding: 16px 16px 105px; cursor: text; }
@@ -52,8 +53,8 @@ button { font: inherit; color: inherit; border: 0; }
 .footer-block .editable { font-size: 15px; line-height: 1.45; color: var(--hint); padding-top: 4px; }
 .divider-block { padding: 15px 0 8px; }
 .divider-line { height: 1px; width: 100%; background: var(--separator); }
-.block-delete { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--hint); cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
-.block-delete:hover { color: #e5534b; background: color-mix(in srgb, #e5534b 14%, transparent); }
+.block-delete { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--destructive); cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.block-delete:hover { background: color-mix(in srgb, var(--destructive) 16%, transparent); }
 .block-delete:active { transform: scale(.92); }
 .editor-block:not(.preformatted):not(.divider-block) > .block-delete { position: absolute; top: 6px; right: 6px; z-index: 3; }
 .divider-delete { position: absolute; top: -14px; right: 6px; z-index: 3; }
@@ -64,6 +65,7 @@ button { font: inherit; color: inherit; border: 0; }
 .tool-button { flex: 0 0 40px; color: var(--text); font-size: 20px; font-weight: 700; }
 .tool-button.heading-tool { font-family: Georgia, "Times New Roman", serif; font-size: 23px; }
 .tool-button.heading-tool.selected { color: var(--button); background: color-mix(in srgb, var(--button) 14%, transparent); }
+.tool-button.inline-tool.selected { color: var(--button); background: color-mix(in srgb, var(--button) 14%, transparent); }
 .format-wrap { position: relative; }
 .format-menu { position: absolute; left: -6px; bottom: 50px; width: 238px; max-height: min(70dvh, 520px); overflow-y: auto; padding: 7px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 98%, black 2%); box-shadow: 0 12px 35px rgba(0,0,0,.35); border: 1px solid var(--separator); transform-origin: bottom left; animation: menu-in .12s ease-out; }
 @keyframes menu-in { from { opacity: 0; transform: translateY(5px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -77,6 +79,26 @@ button { font: inherit; color: inherit; border: 0; }
 .menu-heading.block-icon { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 16px; font-weight: 700; }
 .menu-heading.block-icon.pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; }
 .menu-heading.block-icon.divider { font-size: 22px; font-weight: 400; }
+.menu-heading.mark-bold { font-weight: 800; }
+.menu-heading.mark-italic { font-style: italic; }
+.menu-heading.mark-underline { text-decoration: underline; }
+.menu-heading.mark-strike { text-decoration: line-through; }
+.menu-heading.mark-code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; }
+.menu-heading.mark-spoiler { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 13px; letter-spacing: 1px; }
+.menu-heading.link-icon { display: grid; place-items: center; }
+.menu-item:disabled { cursor: default; opacity: .35; }
+.menu-item:disabled:active { background: transparent; }
+.rt-spoiler { background: color-mix(in srgb, var(--text) 16%, transparent); border-radius: 3px; padding: 0 1px; }
+.rt-link { color: var(--button); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--button) 45%, transparent); cursor: text; }
+.link-editor { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.link-editor input { width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--separator); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); font-size: 15px; outline: none; }
+.link-editor input:focus { border-color: color-mix(in srgb, var(--button) 55%, transparent); }
+.link-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.link-editor-actions button { min-height: 36px; padding: 0 12px; border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.link-remove { margin-right: auto; color: var(--destructive); background: transparent; }
+.link-cancel { color: var(--hint); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.link-apply { color: var(--button-text); background: var(--button); }
+.link-apply:disabled { opacity: .45; cursor: default; }
 .menu-item svg { color: var(--button); }
 
 .share-button { width: 48px; height: 48px; min-width: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--button); color: var(--button-text); cursor: pointer; box-shadow: 0 5px 18px color-mix(in srgb, var(--button) 32%, transparent); -webkit-tap-highlight-color: transparent; }

@@ -12,6 +12,7 @@ function Icon({ name, size = 24 }) {
     check: <path d="m5 12 4 4L19 6"/>,
     trash: <><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></>,
     link: <><path d="M9 17H7a5 5 0 0 1 0-10h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></>,
+    close: <><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -19,8 +20,9 @@ function Icon({ name, size = 24 }) {
 const HEADING_OPTIONS = [1,2,3,4,5,6].map(size => ({ size, label: `Heading ${size}` }));
 const BLOCK_OPTIONS = [{ type: 'pre', label: 'Code block', icon: '</>' }, { type: 'footer', label: 'Footer', icon: 'F' }, { type: 'divider', label: 'Divider', icon: '—' }];
 const CODE_LANGUAGES = [['','Plain text'],['python','Python'],['javascript','JavaScript'],['typescript','TypeScript'],['html','HTML'],['css','CSS'],['json','JSON'],['bash','Bash / Shell'],['sql','SQL'],['java','Java'],['c','C'],['cpp','C++'],['csharp','C#'],['go','Go'],['rust','Rust'],['php','PHP'],['kotlin','Kotlin'],['swift','Swift'],['xml','XML'],['yaml','YAML'],['markdown','Markdown']].map(([value,label]) => ({ value, label }));
-// Inline formatting options shown in the "B" panel. Order here is also the
-// order marks combine in when several are toggled on the same selection.
+// Inline formatting options shown in the "B" panel. `core` are the
+// everyday marks; `extra` mirrors how Blocks are separated from headings
+// in the H menu — additional Rich Message formats grouped below a divider.
 const MARK_OPTIONS = [
   { key: 'bold', label: 'Bold', glyph: 'B', className: 'mark-glyph mark-bold' },
   { key: 'italic', label: 'Italic', glyph: 'I', className: 'mark-glyph mark-italic' },
@@ -29,8 +31,13 @@ const MARK_OPTIONS = [
   { key: 'code', label: 'Monospace', glyph: '</>', className: 'mark-glyph mark-code' },
   { key: 'spoiler', label: 'Spoiler', glyph: '•••', className: 'mark-glyph mark-spoiler' },
 ];
-const RICH_TAGS = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's', code: 'code', spoiler: 'span' };
-const RICH_WRAP_ORDER = ['spoiler', 'bold', 'italic', 'underline', 'strikethrough', 'code'];
+const MARK_OPTIONS_EXTRA = [
+  { key: 'marked', label: 'Mark', glyph: 'A', className: 'mark-glyph mark-highlight' },
+  { key: 'subscript', label: 'Subscript', glyph: 'X₂', className: 'mark-glyph mark-sub' },
+  { key: 'superscript', label: 'Superscript', glyph: 'X²', className: 'mark-glyph mark-super' },
+];
+const RICH_TAGS = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's', code: 'code', spoiler: 'span', marked: 'mark', subscript: 'sub', superscript: 'sup' };
+const RICH_WRAP_ORDER = ['spoiler', 'marked', 'bold', 'italic', 'underline', 'strikethrough', 'subscript', 'superscript', 'code'];
 const clone = value => structuredClone(value);
 const canHoldRuns = block => block.type !== 'pre' && block.type !== 'divider';
 
@@ -39,7 +46,11 @@ const escapeHTML = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 function runToHTML(run) {
   let html = escapeHTML(run.text);
   for (const mark of RICH_WRAP_ORDER) {
-    if (run.marks.includes(mark)) { const tag = RICH_TAGS[mark]; const cls = mark === 'spoiler' ? ' class="rt-spoiler"' : ''; html = `<${tag}${cls}>${html}</${tag}>`; }
+    if (run.marks.includes(mark)) {
+      const tag = RICH_TAGS[mark];
+      const cls = mark === 'spoiler' ? ' class="rt-spoiler"' : mark === 'marked' ? ' class="rt-mark"' : '';
+      html = `<${tag}${cls}>${html}</${tag}>`;
+    }
   }
   if (run.link) html = `<span class="rt-link" data-url="${escapeHTML(run.link)}">${html}</span>`;
   return html;
@@ -62,6 +73,9 @@ function domToRuns(node) {
     else if (tag === 'u') nextMarks = [...marks, 'underline'];
     else if (tag === 's' || tag === 'strike' || tag === 'del') nextMarks = [...marks, 'strikethrough'];
     else if (tag === 'code') nextMarks = [...marks, 'code'];
+    else if (tag === 'mark') nextMarks = [...marks, 'marked'];
+    else if (tag === 'sub') nextMarks = [...marks, 'subscript'];
+    else if (tag === 'sup') nextMarks = [...marks, 'superscript'];
     else if (n.classList?.contains('rt-spoiler')) nextMarks = [...marks, 'spoiler'];
     if (n.classList?.contains('rt-link')) nextLink = n.getAttribute('data-url') || link;
     nextMarks = [...new Set(nextMarks)];
@@ -86,13 +100,24 @@ export default function App() {
   const [linkDraft, setLinkDraft] = useState(null); // { url }
   const [languageOpenId, setLanguageOpenId] = useState(null);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const [notifications, setNotifications] = useState([]); // { id, type: 'success' | 'error', message }
   const [, setHistoryVersion] = useState(0);
   const editorRefs = useRef(new Map());
   const lastRenderedRuns = useRef(new Map());
   const pendingFocus = useRef(null);
   const pendingAfterFocus = useRef(null);
   const history = useRef({ past: [], future: [], lastInputAt: 0 });
+  const notificationTimers = useRef(new Map());
+
+  const dismissNotification = id => {
+    setNotifications(list => list.filter(item => item.id !== id));
+    const timer = notificationTimers.current.get(id); if (timer) { clearTimeout(timer); notificationTimers.current.delete(id); }
+  };
+  const notify = (type, message, duration = 4000) => {
+    const id = crypto.randomUUID();
+    setNotifications(list => [...list, { id, type, message }]);
+    notificationTimers.current.set(id, setTimeout(() => dismissNotification(id), duration));
+  };
 
   useEffect(() => {
     const app = tg(); if (!app) return;
@@ -379,8 +404,10 @@ export default function App() {
 
   // Toggles one inline mark across a selection: if every run in the
   // selection already has it, it's removed everywhere; otherwise it's
-  // added everywhere. The selection itself is restored afterward so
-  // several marks can be combined without re-selecting each time.
+  // added everywhere. Subscript and superscript are mutually exclusive
+  // (a character can't sit both above and below the baseline), so turning
+  // one on switches the other off. The selection itself is restored
+  // afterward so several marks can be combined without re-selecting.
   const toggleMark = (blockId, start, end, mark) => {
     if (start === end) return;
     const block = document.blocks.find(b => b.id === blockId); if (!block || !canHoldRuns(block)) return;
@@ -389,10 +416,38 @@ export default function App() {
     const target = sliceRuns(block.runs, start, end);
     const after = sliceRuns(block.runs, end, fullLen);
     const shouldRemove = target.every(run => run.marks.includes(mark));
-    const updatedTarget = target.map(run => createRun(run.text, shouldRemove ? run.marks.filter(m => m !== mark) : [...new Set([...run.marks, mark])], run.link));
+    const opposite = mark === 'subscript' ? 'superscript' : mark === 'superscript' ? 'subscript' : null;
+    const updatedTarget = target.map(run => {
+      let marks = shouldRemove ? run.marks.filter(m => m !== mark) : [...new Set([...run.marks, mark])];
+      if (!shouldRemove && opposite) marks = marks.filter(m => m !== opposite);
+      return createRun(run.text, marks, run.link);
+    });
     commit({ ...document, blocks: document.blocks.map(b => b.id === blockId ? { ...b, runs: mergeRuns(before, updatedTarget, after) } : b) });
     setActiveId(blockId); pendingFocus.current = { id: blockId, start, end };
     tg()?.HapticFeedback?.selectionChanged?.();
+  };
+
+  // "Regular" strips every mark and any link from the selection, resetting
+  // it to plain text.
+  const clearFormatting = (blockId, start, end) => {
+    if (start === end) return;
+    const block = document.blocks.find(b => b.id === blockId); if (!block || !canHoldRuns(block)) return;
+    const fullLen = runsText(block.runs).length;
+    const before = sliceRuns(block.runs, 0, start);
+    const target = sliceRuns(block.runs, start, end);
+    const after = sliceRuns(block.runs, end, fullLen);
+    const updatedTarget = target.map(run => createRun(run.text, [], null));
+    commit({ ...document, blocks: document.blocks.map(b => b.id === blockId ? { ...b, runs: mergeRuns(before, updatedTarget, after) } : b) });
+    setActiveId(blockId); pendingFocus.current = { id: blockId, start, end };
+    tg()?.HapticFeedback?.selectionChanged?.();
+  };
+
+  // Bare domains/paths (no scheme) are auto-upgraded to https:// rather
+  // than rejected; an explicit http(s):// or tg:// (Telegram deep link)
+  // scheme is left exactly as typed.
+  const normalizeLinkUrl = raw => {
+    const trimmed = raw.trim(); if (!trimmed) return '';
+    return /^(https?:\/\/|tg:\/\/)/i.test(trimmed) ? trimmed : `https://${trimmed}`;
   };
 
   const applyLink = url => {
@@ -403,7 +458,7 @@ export default function App() {
     const before = sliceRuns(block.runs, 0, start);
     const target = sliceRuns(block.runs, start, end);
     const after = sliceRuns(block.runs, end, fullLen);
-    const nextLink = url.trim() || null;
+    const nextLink = url.trim() ? normalizeLinkUrl(url) : null;
     const updatedTarget = target.map(run => createRun(run.text, run.marks, nextLink));
     commit({ ...document, blocks: document.blocks.map(b => b.id === blockId ? { ...b, runs: mergeRuns(before, updatedTarget, after) } : b) });
     setActiveId(blockId); pendingFocus.current = { id: blockId, start, end };
@@ -411,15 +466,16 @@ export default function App() {
   };
 
   const send = async () => {
-    setError(''); const app = tg();
-    if (!app?.initData) { setError('Open this editor inside Telegram first.'); return; }
-    const payload = toTelegramRichMessage(document); if (!payload.blocks.length) { setError('Write something before sending.'); return; }
+    const app = tg();
+    if (!app?.initData) { notify('error', 'Open this editor inside Telegram first.'); return; }
+    const payload = toTelegramRichMessage(document); if (!payload.blocks.length) { notify('error', 'Write something before sending.'); return; }
     setSending(true);
     try {
       const response = await fetch('/api/telegram', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ initData: app.initData, document: { version: 1, blocks: payload.blocks } }) });
       const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.error || 'Could not send Rich Message.');
       app.HapticFeedback?.impactOccurred?.('light');
-    } catch (cause) { console.error(cause); setError(cause?.message || 'Could not send Rich Message.'); }
+      notify('success', 'Sent to your chat with the bot.');
+    } catch (cause) { console.error(cause); notify('error', cause?.message || 'Could not send Rich Message.'); }
     finally { setSending(false); }
   };
 
@@ -472,7 +528,10 @@ export default function App() {
         </React.Fragment>)}
       </div>
     </section>
-    {error && <div className="error-banner" role="alert">{error}</div>}
+    {notifications.length > 0 && <div className="notifications">{notifications.map(item => <div key={item.id} className={`notification ${item.type}`} role="status">
+      <span className="notification-message">{item.message}</span>
+      <button type="button" className="notification-close" aria-label="Dismiss" onClick={() => dismissNotification(item.id)}><Icon name="close" size={14}/></button>
+    </div>)}</div>}
     <footer className="composer-bar"><div className="toolbar">
       <div className="format-wrap"><button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text and block formatting" aria-expanded={formatOpen} onClick={event => { event.stopPropagation(); setLanguageOpenId(null); setInlineOpen(false); setFormatOpen(open => !open); }}>H</button>
         {formatOpen && <div className="format-menu" onClick={event => event.stopPropagation()}><div className="format-menu-title">Text format</div><button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}><span className="menu-heading paragraph-icon">P</span><span>Paragraph</span>{activeBlock?.type === 'paragraph' && <Icon name="check" size={21}/>}</button>{HEADING_OPTIONS.map(option => <button key={option.size} className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'} onClick={() => changeType('heading', option.size)}><span className={`menu-heading h-${option.size}`}>H{option.size}</span><span>{option.label}</span>{activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21}/>}</button>)}<div className="format-menu-title block-title">Blocks</div>{BLOCK_OPTIONS.map(option => <button key={option.type} className={activeBlock?.type === option.type ? 'menu-item active' : 'menu-item'} onClick={() => changeType(option.type)}><span className={`menu-heading block-icon ${option.type}`}>{option.icon}</span><span>{option.label}</span>{activeBlock?.type === option.type && <Icon name="check" size={21}/>}</button>)}</div>}
@@ -488,7 +547,14 @@ export default function App() {
             </div>
           </div> : <>
             <div className="format-menu-title">{hasSelection ? 'Formatting' : 'Select text to format'}</div>
+            <button type="button" className="menu-item" disabled={!hasSelection} onMouseDown={event => event.preventDefault()} onClick={() => clearFormatting(activeSelection.blockId, activeSelection.start, activeSelection.end)}>
+              <span className="menu-heading paragraph-icon">T</span><span>Regular</span>
+            </button>
             {MARK_OPTIONS.map(option => <button type="button" key={option.key} className={markIsActive(option.key) ? 'menu-item active' : 'menu-item'} disabled={!hasSelection} onMouseDown={event => event.preventDefault()} onClick={() => toggleMark(activeSelection.blockId, activeSelection.start, activeSelection.end, option.key)}>
+              <span className={`menu-heading ${option.className}`}>{option.glyph}</span><span>{option.label}</span>{markIsActive(option.key) && <Icon name="check" size={21}/>}
+            </button>)}
+            <div className="format-menu-title block-title">More formatting</div>
+            {MARK_OPTIONS_EXTRA.map(option => <button type="button" key={option.key} className={markIsActive(option.key) ? 'menu-item active' : 'menu-item'} disabled={!hasSelection} onMouseDown={event => event.preventDefault()} onClick={() => toggleMark(activeSelection.blockId, activeSelection.start, activeSelection.end, option.key)}>
               <span className={`menu-heading ${option.className}`}>{option.glyph}</span><span>{option.label}</span>{markIsActive(option.key) && <Icon name="check" size={21}/>}
             </button>)}
             <button type="button" className={selectionLink ? 'menu-item active' : 'menu-item'} disabled={!hasSelection} onMouseDown={event => event.preventDefault()} onClick={() => setLinkDraft({ url: selectionLink })}>

@@ -26,7 +26,7 @@ button { font: inherit; color: inherit; border: 0; }
 .editor { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .document-area { width: min(760px, 100%); min-height: 100%; margin: 0 auto; padding: 16px 16px 105px; cursor: text; }
 .editor-block { position: relative; padding: 3px 0; border-left: 2px solid transparent; transition: border-color .15s ease; }
-.editor-block.active { border-left-color: color-mix(in srgb, var(--button) 70%, transparent); }
+.editor-block.active:not(.paragraph) { border-left-color: color-mix(in srgb, var(--button) 70%, transparent); }
 .editable { outline: none; min-height: 1.55em; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; caret-color: var(--button); direction: ltr; unicode-bidi: plaintext; }
 .editable:empty::before { content: attr(data-placeholder); color: var(--hint); pointer-events: none; }
 .paragraph .editable { font-size: 19px; line-height: 1.52; font-weight: 400; }
@@ -85,10 +85,13 @@ button { font: inherit; color: inherit; border: 0; }
 .menu-heading.mark-strike { text-decoration: line-through; }
 .menu-heading.mark-code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; }
 .menu-heading.mark-spoiler { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 13px; letter-spacing: 1px; }
+.menu-heading.mark-highlight { background: color-mix(in srgb, #ffd54a 55%, transparent); color: #1a1a1a; border-radius: 4px; padding: 1px 5px; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 15px; }
+.menu-heading.mark-sub, .menu-heading.mark-super { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 16px; }
 .menu-heading.link-icon { display: grid; place-items: center; }
 .menu-item:disabled { cursor: default; opacity: .35; }
 .menu-item:disabled:active { background: transparent; }
-.rt-spoiler { background: color-mix(in srgb, var(--text) 16%, transparent); border-radius: 3px; padding: 0 1px; }
+.rt-mark { background: color-mix(in srgb, #ffd54a 55%, transparent); color: #1a1a1a; border-radius: 3px; padding: 0 1px; }
+.rt-spoiler { background: color-mix(in srgb, #6b7280 60%, transparent); color: #fff; border-radius: 4px; padding: 0 3px; }
 .rt-link { color: var(--button); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--button) 45%, transparent); cursor: text; }
 .link-editor { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .link-editor input { width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--separator); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); font-size: 15px; outline: none; }
@@ -103,5 +106,10 @@ button { font: inherit; color: inherit; border: 0; }
 
 .share-button { width: 48px; height: 48px; min-width: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--button); color: var(--button-text); cursor: pointer; box-shadow: 0 5px 18px color-mix(in srgb, var(--button) 32%, transparent); -webkit-tap-highlight-color: transparent; }
 .share-button:disabled { opacity: .6; cursor: default; }
-.error-banner { position: fixed; left: 14px; right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 30; padding: 12px 15px; border-radius: 14px; background: color-mix(in srgb, #e5484d 16%, var(--surface)); color: var(--text); font-size: 14px; line-height: 1.35; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+.notifications { position: fixed; left: 14px; right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 30; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.notification { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 12px 10px 12px 15px; border-radius: 14px; background: color-mix(in srgb, #e5484d 16%, var(--surface)); color: var(--text); font-size: 14px; line-height: 1.35; box-shadow: 0 8px 30px rgba(0,0,0,.25); animation: menu-in .12s ease-out; }
+.notification.success { background: color-mix(in srgb, #34c759 16%, var(--surface)); }
+.notification-message { flex: 1; min-width: 0; }
+.notification-close { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--hint); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.notification-close:active { transform: scale(.9); }
 @media (min-width: 700px) { .topbar { padding-inline: 16px; } .document-area { padding-inline: 24px; } .composer-bar { padding-inline: 16px; } }

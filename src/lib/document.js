@@ -1,7 +1,8 @@
 // Inline formatting marks a run of text can carry. These map 1:1 onto
 // Telegram Bot API 10.1 RichText tagged types (bold/italic/underline/
-// strikethrough/spoiler/code); `link` is stored separately on the run
-// since it carries a URL and serializes to the RichText "url" type.
+// strikethrough/spoiler/code/marked/subscript/superscript); `link` is
+// stored separately on the run since it carries a URL and serializes to
+// the RichText "url" type.
 export const MARKS = [
   { key: 'bold', label: 'Bold', tag: 'b' },
   { key: 'italic', label: 'Italic', tag: 'i' },
@@ -9,6 +10,9 @@ export const MARKS = [
   { key: 'strikethrough', label: 'Strikethrough', tag: 's' },
   { key: 'code', label: 'Monospace', tag: 'code' },
   { key: 'spoiler', label: 'Spoiler', tag: 'span' },
+  { key: 'marked', label: 'Mark', tag: 'mark' },
+  { key: 'subscript', label: 'Subscript', tag: 'sub' },
+  { key: 'superscript', label: 'Superscript', tag: 'sup' },
 ];
 const MARK_KEYS = new Set(MARKS.map((mark) => mark.key));
 
@@ -62,7 +66,7 @@ export function mergeRuns(...runArrays) {
 function runToRichTextNode(run) {
   let node = run.text;
   // Innermost-out wrap order; fixed so serialization is deterministic.
-  for (const mark of ['spoiler', 'bold', 'italic', 'underline', 'strikethrough', 'code']) {
+  for (const mark of ['spoiler', 'marked', 'bold', 'italic', 'underline', 'strikethrough', 'subscript', 'superscript', 'code']) {
     if (run.marks.includes(mark)) node = { type: mark, text: node };
   }
   if (run.link) node = { type: 'url', text: node, url: run.link };

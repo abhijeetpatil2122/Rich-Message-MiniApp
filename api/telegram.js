@@ -103,7 +103,7 @@ function validateDocument(input) {
   if (!input || input.version !== 1 || !Array.isArray(input.blocks)) throw new Error('Invalid document.');
   if (input.blocks.length > MAX_BLOCKS) throw new Error('Too many blocks.');
 
-  const RICH_TEXT_TYPES = new Set(['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'code', 'url']);
+  const RICH_TEXT_TYPES = new Set(['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'code', 'marked', 'subscript', 'superscript', 'url']);
 
   // Bot API 10.1 RichText is a union: a plain string, an array of RichText,
   // or a tagged { type, text } node (plus `url` for links). Recurses with a
@@ -116,7 +116,10 @@ function validateDocument(input) {
       if (!RICH_TEXT_TYPES.has(value.type)) throw new Error(`Unsupported inline format: ${value.type || 'unknown'}.`);
       const text = normalizeRichText(value.text, depthLeft - 1);
       if (value.type === 'url') {
-        if (typeof value.url !== 'string' || !/^https?:\/\//i.test(value.url)) throw new Error('Links must be http(s) URLs.');
+        // Bot API 10.1 doesn't restrict the url field's scheme itself, but we
+        // only allow the schemes that are actually meaningful as a clickable
+        // Telegram link: http(s) and tg:// (in-app deep links).
+        if (typeof value.url !== 'string' || !/^(https?:\/\/|tg:\/\/)/i.test(value.url)) throw new Error('Links must be http(s) or tg:// URLs.');
         if (value.url.length > 2048) throw new Error('Link URL is too long.');
         return { type: 'url', text, url: value.url };
       }

@@ -55,21 +55,7 @@ function runToHTML(run) {
   if (run.link) html = `<span class="rt-link" data-url="${escapeHTML(run.link)}">${html}</span>`;
   return html;
 }
-// A block's runs render inside one contentEditable per block. When the
-// *last* run carries a mark or a link, a caret placed at the very end of
-// the block — by tapping at the end of the line, or simply by having typed
-// up to that point — has nowhere unambiguous to land except inside that
-// run's own DOM node, so anything typed there keeps inheriting the
-// formatting indefinitely. A trailing zero-width space, rendered as a bare
-// (unwrapped) text node, gives the browser a neutral spot to place the
-// caret instead. It's invisible and domToRuns strips it back out on the
-// way in, so it never becomes real, stored content.
-const runsToHTML = runs => {
-  const list = runs || [];
-  const html = list.map(runToHTML).join('');
-  const last = list[list.length - 1];
-  return last && (last.marks.length > 0 || last.link) ? `${html}\u200B` : html;
-};
+const runsToHTML = runs => (runs || []).map(runToHTML).join('');
 
 // Reconstructs runs by walking the contentEditable's actual DOM after a
 // native edit (typing, browser-native formatting, etc.). Any element we
@@ -78,7 +64,7 @@ const runsToHTML = runs => {
 function domToRuns(node) {
   const runs = [];
   const walk = (n, marks, link) => {
-    if (n.nodeType === 3) { const text = n.data.replace(/\u200B/g, ''); if (text) runs.push(createRun(text, marks, link)); return; }
+    if (n.nodeType === 3) { if (n.data) runs.push(createRun(n.data, marks, link)); return; }
     if (n.nodeType !== 1) return;
     const tag = n.tagName.toLowerCase();
     let nextMarks = marks; let nextLink = link;
@@ -104,6 +90,51 @@ const runsEqual = (a, b) => {
   if (!a || !b || a.length !== b.length) return false;
   return a.every((run, i) => run.text === b[i].text && run.link === b[i].link && run.marks.length === b[i].marks.length && run.marks.every(m => b[i].marks.includes(m)));
 };
+
+// The browser's contentEditable has no notion of "this mark shouldn't keep
+// extending" — if the caret sits at the edge of a formatted run, whatever
+// you type next is native-inherited into that same run, indefinitely. We
+// never offer a "type new bold text going forward" mode (marks are only
+// ever applied to text that already exists, via the format panel), so any
+// freshly-typed character that got silently absorbed into a pre-existing
+// run's formatting is always unwanted — it should always be corrected back
+// to plain. This diffs the block's text before/after one input event: a
+// plain, un-selected insertion that landed exactly at an existing run's
+// boundary (not strictly inside it) gets its formatting stripped; typing
+// truly in the middle of already-formatted text, or replacing a selection,
+// is left to inherit normally, since that's genuinely expected.
+function resolveTypedRuns(previousRuns, rawRuns) {
+  const previousText = runsText(previousRuns);
+  const newText = runsText(rawRuns);
+  if (newText.length <= previousText.length) return { runs: rawRuns, corrected: false };
+
+  let prefixLen = 0; const maxPrefix = Math.min(previousText.length, newText.length);
+  while (prefixLen < maxPrefix && previousText[prefixLen] === newText[prefixLen]) prefixLen += 1;
+  let suffixLen = 0; const maxSuffix = Math.min(previousText.length, newText.length) - prefixLen;
+  while (suffixLen < maxSuffix && previousText[previousText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]) suffixLen += 1;
+
+  const removedLen = previousText.length - prefixLen - suffixLen;
+  if (removedLen > 0) return { runs: rawRuns, corrected: false }; // a selection was replaced — inheriting is expected here
+
+  const insertStart = prefixLen; const insertEnd = newText.length - suffixLen;
+  if (insertEnd <= insertStart) return { runs: rawRuns, corrected: false };
+
+  let pos = 0; let isInterior = false;
+  for (const run of previousRuns) {
+    const start = pos; const end = pos + run.text.length; pos = end;
+    if (insertStart > start && insertStart < end) { isInterior = true; break; }
+  }
+  if (isInterior) return { runs: rawRuns, corrected: false }; // typing inside already-formatted text — inherit as expected
+
+  const insertedRaw = sliceRuns(rawRuns, insertStart, insertEnd);
+  const needsStrip = insertedRaw.some(run => run.marks.length > 0 || run.link);
+  if (!needsStrip) return { runs: rawRuns, corrected: false }; // already plain — take the normal, no-rewrite fast path
+
+  const before = sliceRuns(rawRuns, 0, insertStart);
+  const inserted = insertedRaw.map(run => createRun(run.text, [], null));
+  const after = sliceRuns(rawRuns, insertEnd, newText.length);
+  return { runs: mergeRuns(before, inserted, after), corrected: true, caretOffset: insertEnd };
+}
 
 export default function App() {
   const [document, setDocument] = useState(createInitialDocument);
@@ -534,7 +565,13 @@ export default function App() {
                 ? <textarea ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable code-editor" value={block.text} rows={4} wrap="off" spellCheck={false} aria-label="Code block" aria-multiline="true" placeholder={placeholder(block)} onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()} onChange={event => updateText(block.id, event.currentTarget.value)} onKeyDown={event => handleKeyDown(event, block)}/>
                 : <div ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable" contentEditable suppressContentEditableWarning spellCheck role="textbox" aria-multiline="true" aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'footer' ? 'Footer' : 'Paragraph'} data-placeholder={placeholder(block)}
                     onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()}
-                    onInput={event => { const runs = domToRuns(event.currentTarget); lastRenderedRuns.current.set(block.id, runs); commit({ ...document, blocks: document.blocks.map(b => b.id === block.id ? { ...b, runs } : b) }, { coalesce: true }); }}
+                    onInput={event => {
+                      const rawRuns = domToRuns(event.currentTarget);
+                      const { runs, corrected, caretOffset } = resolveTypedRuns(block.runs, rawRuns);
+                      if (corrected) pendingFocus.current = { id: block.id, start: caretOffset, end: caretOffset };
+                      else lastRenderedRuns.current.set(block.id, runs);
+                      commit({ ...document, blocks: document.blocks.map(b => b.id === block.id ? { ...b, runs } : b) }, { coalesce: true });
+                    }}
                     onPaste={event => { event.preventDefault(); const text = (event.clipboardData || window.clipboardData)?.getData('text/plain') || ''; if (text) insertPlainText(block.id, text); }}
                     onKeyDown={event => handleKeyDown(event, block)}/>}
             </>}

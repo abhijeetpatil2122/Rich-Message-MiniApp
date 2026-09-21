@@ -55,7 +55,21 @@ function runToHTML(run) {
   if (run.link) html = `<span class="rt-link" data-url="${escapeHTML(run.link)}">${html}</span>`;
   return html;
 }
-const runsToHTML = runs => (runs || []).map(runToHTML).join('');
+// A block's runs render inside one contentEditable per block. When the
+// *last* run carries a mark or a link, a caret placed at the very end of
+// the block — by tapping at the end of the line, or simply by having typed
+// up to that point — has nowhere unambiguous to land except inside that
+// run's own DOM node, so anything typed there keeps inheriting the
+// formatting indefinitely. A trailing zero-width space, rendered as a bare
+// (unwrapped) text node, gives the browser a neutral spot to place the
+// caret instead. It's invisible and domToRuns strips it back out on the
+// way in, so it never becomes real, stored content.
+const runsToHTML = runs => {
+  const list = runs || [];
+  const html = list.map(runToHTML).join('');
+  const last = list[list.length - 1];
+  return last && (last.marks.length > 0 || last.link) ? `${html}\u200B` : html;
+};
 
 // Reconstructs runs by walking the contentEditable's actual DOM after a
 // native edit (typing, browser-native formatting, etc.). Any element we
@@ -64,7 +78,7 @@ const runsToHTML = runs => (runs || []).map(runToHTML).join('');
 function domToRuns(node) {
   const runs = [];
   const walk = (n, marks, link) => {
-    if (n.nodeType === 3) { if (n.data) runs.push(createRun(n.data, marks, link)); return; }
+    if (n.nodeType === 3) { const text = n.data.replace(/\u200B/g, ''); if (text) runs.push(createRun(text, marks, link)); return; }
     if (n.nodeType !== 1) return;
     const tag = n.tagName.toLowerCase();
     let nextMarks = marks; let nextLink = link;

@@ -53,12 +53,37 @@ button { font: inherit; color: inherit; border: 0; }
 .footer-block .editable { font-size: 15px; line-height: 1.45; color: var(--hint); padding-top: 4px; }
 .divider-block { padding: 15px 0 8px; }
 .divider-line { height: 1px; width: 100%; background: var(--separator); }
+
+.blockquote-block { padding: 6px 0 6px 16px; border-left: 3px solid color-mix(in srgb, var(--button) 55%, transparent) !important; }
+.blockquote-block .editable { font-style: italic; color: color-mix(in srgb, var(--text) 88%, transparent); }
+.pullquote-block { padding: 14px 4px; text-align: center; }
+.pullquote-block .editable { font-family: Georgia, "Times New Roman", serif; font-size: 24px; line-height: 1.3; font-weight: 600; }
+.quote-credit-row { margin-top: 6px; display: flex; align-items: center; gap: 6px; }
+.blockquote-block .quote-credit-row { padding-left: 0; }
+.pullquote-block .quote-credit-row { justify-content: center; }
+.quote-credit-dash { color: var(--hint); font-size: 14px; }
+.quote-credit-input { flex: 0 1 auto; min-width: 0; width: 220px; max-width: 100%; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--hint); font-size: 14px; outline: none; }
+.quote-credit-input:focus { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.quote-credit-remove { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--hint); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.quote-add-credit { margin-top: 6px; padding: 4px 2px; color: var(--hint); font-size: 13px; font-weight: 600; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.quote-add-credit:active { color: var(--button); }
+
+.list-block { display: flex; flex-direction: column; gap: 2px; }
+.list-item { display: flex; align-items: center; gap: 9px; min-height: 34px; }
+.list-marker { flex-shrink: 0; width: 20px; text-align: right; color: var(--hint); font-size: 17px; font-variant-numeric: tabular-nums; }
+.list-checkbox { flex-shrink: 0; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid color-mix(in srgb, var(--text) 35%, transparent); display: grid; place-items: center; background: transparent; color: var(--button-text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.list-checkbox.checked { background: var(--button); border-color: var(--button); }
+.list-item-input { flex: 1; min-width: 0; height: 30px; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 19px; outline: none; }
+.list-item-input.checked { color: var(--hint); text-decoration: line-through; }
+.list-item-input::placeholder { color: var(--hint); }
+
 .block-delete { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--destructive); cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
 .block-delete:hover { background: color-mix(in srgb, var(--destructive) 16%, transparent); }
 .block-delete:active { transform: scale(.92); }
 .editor-block:not(.preformatted):not(.divider-block) > .block-delete { position: absolute; top: 6px; right: 6px; z-index: 3; }
 .divider-delete { position: absolute; top: -14px; right: 6px; z-index: 3; }
 .editor-block.active:not(.preformatted):not(.divider-block) .editable { padding-right: 34px; }
+.editor-block.active.list-block-wrap .list-block { padding-right: 34px; }
 
 .composer-bar { min-height: 68px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--bg) 96%, transparent); border-top: 1px solid var(--separator); position: relative; z-index: 20; }
 .toolbar { min-width: 0; flex: 1; display: flex; align-items: center; gap: 1px; overflow: visible; }
@@ -79,6 +104,11 @@ button { font: inherit; color: inherit; border: 0; }
 .menu-heading.block-icon { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif; font-size: 16px; font-weight: 700; }
 .menu-heading.block-icon.pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; }
 .menu-heading.block-icon.divider { font-size: 22px; font-weight: 400; }
+.menu-heading.block-icon.blockquote { font-family: Georgia, "Times New Roman", serif; font-size: 24px; }
+.menu-heading.block-icon.pullquote { font-family: Georgia, "Times New Roman", serif; font-size: 20px; }
+.menu-heading.block-icon.list-bullet { font-size: 22px; }
+.menu-heading.block-icon.list-number { font-size: 14px; }
+.menu-heading.block-icon.list-checklist { font-size: 15px; }
 .menu-heading.mark-bold { font-weight: 800; }
 .menu-heading.mark-italic { font-style: italic; }
 .menu-heading.mark-underline { text-decoration: underline; }

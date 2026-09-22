@@ -83,13 +83,27 @@ export function runsToRichText(runs) {
   return parts;
 }
 
+// A list item, for v1, is a single plain-text line — no inline formatting
+// yet (see LIST_ITEM scope note in App.jsx). `checked` only matters for
+// checklist-style lists.
+export function createListItem(text = '') {
+  return { id: crypto.randomUUID(), text, checked: false };
+}
+
+const LIST_STYLES = new Set(['bullet', 'number', 'checklist']);
+
 const EMPTY_DOCUMENT = {
   version: 1,
   blocks: [{ id: crypto.randomUUID(), type: 'paragraph', runs: EMPTY_RUNS() }],
 };
 
-const BLOCK_TYPES = new Set(['paragraph', 'heading', 'pre', 'footer', 'divider']);
-const RICH_TYPES = new Set(['paragraph', 'heading', 'footer']);
+const BLOCK_TYPES = new Set(['paragraph', 'heading', 'pre', 'footer', 'divider', 'blockquote', 'pullquote', 'list']);
+// Blockquote/pullquote hold one rich-text paragraph's worth of `runs`,
+// exactly like paragraph/heading/footer — they only add an optional plain
+// `credit` line on top. This lets them reuse the entire inline-formatting
+// engine (splitting, merging, marks, links) with no special-casing.
+const RICH_TYPES = new Set(['paragraph', 'heading', 'footer', 'blockquote', 'pullquote']);
+const QUOTE_TYPES = new Set(['blockquote', 'pullquote']);
 
 export function createBlock(type = 'paragraph', size = 1, text = '') {
   return {
@@ -98,6 +112,8 @@ export function createBlock(type = 'paragraph', size = 1, text = '') {
     ...(type === 'heading' ? { size } : {}),
     ...(type === 'pre' ? { language: '', text } : {}),
     ...(RICH_TYPES.has(type) ? { runs: text ? [createRun(text)] : EMPTY_RUNS() } : {}),
+    ...(QUOTE_TYPES.has(type) ? { credit: null } : {}),
+    ...(type === 'list' ? { style: 'bullet', items: [createListItem(text)] } : {}),
   };
 }
 
@@ -113,6 +129,20 @@ function normalizeRuns(block) {
   }
   if (typeof block.text === 'string' && block.text) return [createRun(block.text)];
   return EMPTY_RUNS();
+}
+
+function normalizeListItems(input) {
+  const items = Array.isArray(input)
+    ? input
+        .filter((item) => item && typeof item === 'object')
+        .slice(0, 200)
+        .map((item) => ({
+          id: item.id || crypto.randomUUID(),
+          text: typeof item.text === 'string' ? item.text : '',
+          checked: !!item.checked,
+        }))
+    : [];
+  return items.length ? items : [createListItem()];
 }
 
 export function normalizeDocument(input) {
@@ -138,13 +168,20 @@ export function normalizeDocument(input) {
         };
       }
 
+      if (block.type === 'list') {
+        const style = LIST_STYLES.has(block.style) ? block.style : 'bullet';
+        return { id: block.id || crypto.randomUUID(), type: 'list', style, items: normalizeListItems(block.items) };
+      }
+
       const runs = normalizeRuns(block);
+      const credit = QUOTE_TYPES.has(block.type) ? (typeof block.credit === 'string' && block.credit.trim() ? block.credit : null) : undefined;
+
       if (block.type === 'heading') {
         const size = Math.min(6, Math.max(1, Number(block.size) || 1));
         return { id: block.id || crypto.randomUUID(), type: 'heading', size, runs };
       }
 
-      return { id: block.id || crypto.randomUUID(), type: block.type, runs };
+      return { id: block.id || crypto.randomUUID(), type: block.type, runs, ...(credit !== undefined ? { credit } : {}) };
     });
 
   return {
@@ -153,24 +190,61 @@ export function normalizeDocument(input) {
   };
 }
 
+// For ordered lists, the API wants a plain accessibility label per item; we
+// mirror whatever marker the item visually shows.
+function listItemLabel(style, index) {
+  if (style === 'number') return String(index + 1);
+  if (style === 'checklist') return '';
+  return '•';
+}
+
 export function toTelegramRichMessage(document) {
   const normalized = normalizeDocument(document);
   return {
     blocks: normalized.blocks
-      .filter((block) => block.type === 'divider' || (block.type === 'pre' ? block.text.length > 0 : runsText(block.runs).length > 0))
+      .filter((block) => {
+        if (block.type === 'divider') return true;
+        if (block.type === 'pre') return block.text.length > 0;
+        if (block.type === 'list') return block.items.some((item) => item.text.trim().length > 0);
+        return runsText(block.runs).length > 0;
+      })
       .map((block) => {
         if (block.type === 'heading') return { type: 'heading', text: runsToRichText(block.runs), size: block.size };
         if (block.type === 'pre') return { type: 'pre', text: block.text, ...(block.language ? { language: block.language } : {}) };
         if (block.type === 'footer') return { type: 'footer', text: runsToRichText(block.runs) };
         if (block.type === 'divider') return { type: 'divider' };
+        if (block.type === 'blockquote') {
+          return {
+            type: 'blockquote',
+            blocks: [{ type: 'paragraph', text: runsToRichText(block.runs) }],
+            ...(block.credit ? { credit: block.credit } : {}),
+          };
+        }
+        if (block.type === 'pullquote') {
+          return { type: 'pullquote', text: runsToRichText(block.runs), ...(block.credit ? { credit: block.credit } : {}) };
+        }
+        if (block.type === 'list') {
+          const items = block.items.filter((item) => item.text.trim().length > 0);
+          return {
+            type: 'list',
+            items: items.map((item, index) => {
+              const base = { label: listItemLabel(block.style, index), blocks: [{ type: 'paragraph', text: item.text }] };
+              if (block.style === 'number') return { ...base, type: '1', value: index + 1 };
+              if (block.style === 'checklist') return { ...base, has_checkbox: true, is_checked: !!item.checked };
+              return base;
+            }),
+          };
+        }
         return { type: 'paragraph', text: runsToRichText(block.runs) };
       }),
   };
 }
 
 export function documentTextLength(document) {
-  return normalizeDocument(document).blocks.reduce(
-    (total, block) => total + (block.type === 'pre' ? (block.text || '').length : runsText(block.runs).length),
-    0,
-  );
+  return normalizeDocument(document).blocks.reduce((total, block) => {
+    if (block.type === 'pre') return total + (block.text || '').length;
+    if (block.type === 'list') return total + block.items.reduce((sum, item) => sum + item.text.length, 0);
+    if (block.type === 'divider') return total;
+    return total + runsText(block.runs).length + (block.credit ? block.credit.length : 0);
+  }, 0);
 }

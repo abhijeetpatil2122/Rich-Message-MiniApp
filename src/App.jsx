@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createBlock, createInitialDocument, createRun, mergeRuns, runsText, sliceRuns, toTelegramRichMessage } from './lib/document.js';
+import { createBlock, createInitialDocument, createListItem, createRun, mergeRuns, runsText, sliceRuns, toTelegramRichMessage } from './lib/document.js';
 
 const tg = () => window.Telegram?.WebApp;
 
@@ -18,7 +18,17 @@ function Icon({ name, size = 24 }) {
 }
 
 const HEADING_OPTIONS = [1,2,3,4,5,6].map(size => ({ size, label: `Heading ${size}` }));
-const BLOCK_OPTIONS = [{ type: 'pre', label: 'Code block', icon: '</>' }, { type: 'footer', label: 'Footer', icon: 'F' }, { type: 'divider', label: 'Divider', icon: '—' }];
+const BLOCK_OPTIONS = [
+  { type: 'pre', label: 'Code block', icon: '</>' },
+  { type: 'footer', label: 'Footer', icon: 'F' },
+  { type: 'blockquote', label: 'Blockquote', icon: '❝' },
+  { type: 'pullquote', label: 'Pullquote', icon: '„' },
+  { type: 'list-bullet', label: 'Bulleted list', icon: '•' },
+  { type: 'list-number', label: 'Numbered list', icon: '1.' },
+  { type: 'list-checklist', label: 'Checklist', icon: '☑' },
+  { type: 'divider', label: 'Divider', icon: '—' },
+];
+const LIST_STYLE_TYPES = new Set(['list-bullet', 'list-number', 'list-checklist']);
 const CODE_LANGUAGES = [['','Plain text'],['python','Python'],['javascript','JavaScript'],['typescript','TypeScript'],['html','HTML'],['css','CSS'],['json','JSON'],['bash','Bash / Shell'],['sql','SQL'],['java','Java'],['c','C'],['cpp','C++'],['csharp','C#'],['go','Go'],['rust','Rust'],['php','PHP'],['kotlin','Kotlin'],['swift','Swift'],['xml','XML'],['yaml','YAML'],['markdown','Markdown']].map(([value,label]) => ({ value, label }));
 // Inline formatting options shown in the "B" panel. `core` are the
 // everyday marks; `extra` mirrors how Blocks are separated from headings
@@ -39,7 +49,7 @@ const MARK_OPTIONS_EXTRA = [
 const RICH_TAGS = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's', code: 'code', spoiler: 'span', marked: 'mark', subscript: 'sub', superscript: 'sup' };
 const RICH_WRAP_ORDER = ['spoiler', 'marked', 'bold', 'italic', 'underline', 'strikethrough', 'subscript', 'superscript', 'code'];
 const clone = value => structuredClone(value);
-const canHoldRuns = block => block.type !== 'pre' && block.type !== 'divider';
+const canHoldRuns = block => block.type !== 'pre' && block.type !== 'divider' && block.type !== 'list';
 
 const escapeHTML = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -234,12 +244,14 @@ export default function App() {
   };
 
   const focusBlock = (id, start = Infinity, end = start) => {
-    const block = document.blocks.find(item => item.id === id); if (!block) return false;
-    if (block.type === 'divider') {
+    const block = document.blocks.find(item => item.id === id);
+    if (block?.type === 'divider') {
       const index = document.blocks.findIndex(item => item.id === id);
       const next = document.blocks.slice(index + 1).find(item => item.type !== 'divider');
-      return next ? focusNode(editorRefs.current.get(next.id), start, end) : false;
+      if (!next) return false;
+      return next.type === 'list' ? focusNode(editorRefs.current.get(next.items[0].id), start, end) : focusNode(editorRefs.current.get(next.id), start, end);
     }
+    if (block?.type === 'list') return focusNode(editorRefs.current.get(block.items[0].id), start, end);
     return focusNode(editorRefs.current.get(id), start, end);
   };
 
@@ -253,16 +265,19 @@ export default function App() {
     }
   }, [document]);
 
-  // Neither a `divider` nor a `pre` block may be the first or the last block
-  // in the document: either position would leave no ordinary block to click
-  // or type into. Whenever a mutation would leave one there, silently add a
-  // normal empty paragraph next to it so there's always somewhere to write.
+  // Neither a `divider`, a `pre`, nor a `list` block may be the first or
+  // last block in the document: each of those is edited through its own
+  // separate mechanism (not the normal split/merge path), so being at
+  // either edge would leave no ordinary block to click or type into.
+  // Whenever a mutation would leave one there, silently add a normal empty
+  // paragraph next to it so there's always somewhere to write.
   const ensureBoundaryParagraphs = next => {
     let blocks = next.blocks;
+    const isBoundaryRisk = type => type === 'pre' || type === 'divider' || type === 'list';
     const first = blocks[0];
-    if (first && (first.type === 'pre' || first.type === 'divider')) blocks = [createBlock('paragraph'), ...blocks];
+    if (first && isBoundaryRisk(first.type)) blocks = [createBlock('paragraph'), ...blocks];
     const last = blocks[blocks.length - 1];
-    if (last && (last.type === 'pre' || last.type === 'divider')) blocks = [...blocks, createBlock('paragraph')];
+    if (last && isBoundaryRisk(last.type)) blocks = [...blocks, createBlock('paragraph')];
     return blocks === next.blocks ? next : { ...next, blocks };
   };
 
@@ -286,14 +301,25 @@ export default function App() {
       const divider = createBlock('divider'); blocks.splice(index + 1, 0, divider);
       commit({ ...document, blocks }); setLanguageOpenId(null); setFormatOpen(false);
       pendingAfterFocus.current = { anchorId: divider.id, start: Infinity, end: Infinity };
+    } else if (LIST_STYLE_TYPES.has(type)) {
+      const style = type === 'list-bullet' ? 'bullet' : type === 'list-number' ? 'number' : 'checklist';
+      commit({ ...document, blocks: document.blocks.map(block => {
+        if (block.id !== activeId) return block;
+        if (block.type === 'list') return { ...block, style }; // already a list — just switch its style, keep items
+        const seedText = block.runs ? runsText(block.runs) : (block.text || '');
+        return { id: block.id, type: 'list', style, items: [createListItem(seedText)] };
+      }) });
+      setLanguageOpenId(null); setFormatOpen(false); requestAnimationFrame(() => focusBlock(activeId));
     } else {
       commit({ ...document, blocks: document.blocks.map(block => {
         if (block.id !== activeId) return block;
-        const { text, language, ...rest } = block;
-        const runs = block.runs || [createRun(text || '')];
+        const { text, language, items, style, credit, ...rest } = block;
+        const seedText = block.type === 'list' ? (items?.[0]?.text || '') : (text || '');
+        const runs = block.runs || [createRun(seedText)];
         if (type === 'paragraph') return { ...rest, type: 'paragraph', runs };
         if (type === 'heading') return { ...rest, type: 'heading', size, runs };
         if (type === 'footer') return { ...rest, type: 'footer', runs };
+        if (type === 'blockquote' || type === 'pullquote') return { ...rest, type, runs, credit: credit !== undefined ? credit : null };
         if (type === 'pre') return { ...rest, type: 'pre', language: block.language || '', text: runsText(runs) };
         return block;
       }) });
@@ -346,7 +372,13 @@ export default function App() {
       setActiveId(id); pendingFocus.current = { id, start: 0, end: 0 };
       return;
     }
-    if (prev.type === 'pre') { setActiveId(prev.id); pendingFocus.current = { id: prev.id, start: Infinity, end: Infinity }; return; }
+    if (prev.type === 'pre' || prev.type === 'list') {
+      // Step into the previous block rather than merging text into it —
+      // code and list content shouldn't silently absorb plain prose.
+      setActiveId(prev.id);
+      pendingFocus.current = prev.type === 'list' ? { id: prev.items[prev.items.length - 1].id, start: Infinity, end: Infinity } : { id: prev.id, start: Infinity, end: Infinity };
+      return;
+    }
     const current = document.blocks[index];
     const joinOffset = runsText(prev.runs).length;
     const merged = { ...prev, runs: mergeRuns(prev.runs, current.runs) };
@@ -359,8 +391,94 @@ export default function App() {
     if (document.blocks.length === 1) return;
     const index = document.blocks.findIndex(b => b.id === id); const nextActive = document.blocks[index - 1] || document.blocks[index + 1];
     commit({ ...document, blocks: document.blocks.filter(b => b.id !== id) }); setActiveId(nextActive.id);
-    if (nextActive.type !== 'divider') pendingFocus.current = { id: nextActive.id, start: Infinity, end: Infinity }; setLanguageOpenId(null);
+    if (nextActive.type === 'divider') { /* not focusable directly */ }
+    else if (nextActive.type === 'list') pendingFocus.current = { id: nextActive.items[nextActive.items.length - 1].id, start: Infinity, end: Infinity };
+    else pendingFocus.current = { id: nextActive.id, start: Infinity, end: Infinity };
+    setLanguageOpenId(null);
   };
+
+  // --- List blocks -----------------------------------------------------
+  // v1 scope: list items are plain text lines (no inline bold/italic/etc.
+  // inside an item yet) — see the note in the H menu's list options.
+  const updateListItemText = (blockId, itemId, text) => {
+    commit({ ...document, blocks: document.blocks.map(b => b.id === blockId ? { ...b, items: b.items.map(i => i.id === itemId ? { ...i, text } : i) } : b) }, { coalesce: true });
+  };
+
+  const toggleListItemChecked = (blockId, itemId) => {
+    commit({ ...document, blocks: document.blocks.map(b => b.id === blockId ? { ...b, items: b.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i) } : b) });
+    tg()?.HapticFeedback?.selectionChanged?.();
+  };
+
+  const splitListItem = (blockId, itemId, before, after) => {
+    const blockIndex = document.blocks.findIndex(b => b.id === blockId); if (blockIndex < 0) return;
+    const block = document.blocks[blockIndex];
+    const itemIndex = block.items.findIndex(i => i.id === itemId); if (itemIndex < 0) return;
+    const items = [...block.items]; items[itemIndex] = { ...items[itemIndex], text: before };
+    const newItem = createListItem(after); items.splice(itemIndex + 1, 0, newItem);
+    const blocks = [...document.blocks]; blocks[blockIndex] = { ...block, items };
+    commit({ ...document, blocks });
+    setActiveId(blockId); pendingFocus.current = { id: newItem.id, start: 0, end: 0 };
+  };
+
+  // Backspace at the start of an item merges it into the previous item
+  // (caret lands at the seam), removes it outright if it's empty and the
+  // only item (the whole list block goes away), or is a safe no-op at the
+  // very first item of a multi-item list (v1 doesn't outdent/exit from there).
+  const removeListItem = (blockId, itemId) => {
+    const blockIndex = document.blocks.findIndex(b => b.id === blockId); if (blockIndex < 0) return;
+    const block = document.blocks[blockIndex];
+    const itemIndex = block.items.findIndex(i => i.id === itemId); if (itemIndex < 0) return;
+    if (block.items.length === 1) {
+      if (document.blocks.length === 1) return;
+      const nextActive = document.blocks[blockIndex - 1] || document.blocks[blockIndex + 1];
+      commit({ ...document, blocks: document.blocks.filter(b => b.id !== blockId) });
+      setActiveId(nextActive.id);
+      if (nextActive.type === 'list') pendingFocus.current = { id: nextActive.items[nextActive.items.length - 1].id, start: Infinity, end: Infinity };
+      else if (nextActive.type !== 'divider') pendingFocus.current = { id: nextActive.id, start: Infinity, end: Infinity };
+      return;
+    }
+    if (itemIndex === 0) return;
+    const current = block.items[itemIndex]; const prevItem = block.items[itemIndex - 1];
+    const joinOffset = prevItem.text.length;
+    const items = block.items.filter(i => i.id !== itemId).map(i => i.id === prevItem.id ? { ...i, text: prevItem.text + current.text } : i);
+    const blocks = [...document.blocks]; blocks[blockIndex] = { ...block, items };
+    commit({ ...document, blocks });
+    setActiveId(blockId); pendingFocus.current = { id: prevItem.id, start: joinOffset, end: joinOffset };
+  };
+
+  // Enter on an empty last item exits the list entirely (matches the usual
+  // "blank line to end the list" convention), leaving a normal paragraph
+  // to keep writing in.
+  const exitList = blockId => {
+    const index = document.blocks.findIndex(b => b.id === blockId); if (index < 0) return;
+    const block = document.blocks[index];
+    const remainingItems = block.items.slice(0, -1);
+    const paragraph = createBlock('paragraph');
+    const blocks = [...document.blocks];
+    if (remainingItems.length === 0) blocks.splice(index, 1, paragraph);
+    else { blocks[index] = { ...block, items: remainingItems }; blocks.splice(index + 1, 0, paragraph); }
+    commit({ ...document, blocks });
+    setActiveId(paragraph.id); pendingFocus.current = { id: paragraph.id, start: 0, end: 0 };
+  };
+
+  const handleListItemKeyDown = (event, block, item, itemIndex) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
+      const input = event.currentTarget;
+      const start = input.selectionStart ?? item.text.length; const end = input.selectionEnd ?? item.text.length;
+      splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
+      return;
+    }
+    if (event.key === 'Backspace') {
+      const input = event.currentTarget;
+      const atStart = (input.selectionStart ?? 0) === 0 && (input.selectionEnd ?? 0) === 0;
+      if (item.text === '' || atStart) { event.preventDefault(); removeListItem(block.id, item.id); }
+    }
+  };
+
+  // --- Blockquote / pullquote credit ------------------------------------
+  const updateCredit = (blockId, credit) => commit({ ...document, blocks: document.blocks.map(b => b.id === blockId ? { ...b, credit } : b) }, { coalesce: true });
 
   const undo = () => {
     const previous = history.current.past.pop(); if (!previous) return;
@@ -524,8 +642,24 @@ export default function App() {
     finally { setSending(false); }
   };
 
-  const blockClass = block => block.type === 'heading' ? `heading heading-${block.size}` : block.type === 'pre' ? 'preformatted' : block.type === 'footer' ? 'footer-block' : block.type === 'divider' ? 'divider-block' : 'paragraph';
-  const placeholder = block => block.type === 'heading' ? `Heading ${block.size}` : block.type === 'pre' ? 'Write code…' : block.type === 'footer' ? 'Footer…' : 'Write here…';
+  const blockClass = block => {
+    if (block.type === 'heading') return `heading heading-${block.size}`;
+    if (block.type === 'pre') return 'preformatted';
+    if (block.type === 'footer') return 'footer-block';
+    if (block.type === 'divider') return 'divider-block';
+    if (block.type === 'blockquote') return 'blockquote-block';
+    if (block.type === 'pullquote') return 'pullquote-block';
+    if (block.type === 'list') return 'list-block-wrap';
+    return 'paragraph';
+  };
+  const placeholder = block => {
+    if (block.type === 'heading') return `Heading ${block.size}`;
+    if (block.type === 'pre') return 'Write code…';
+    if (block.type === 'footer') return 'Footer…';
+    if (block.type === 'blockquote') return 'Quote…';
+    if (block.type === 'pullquote') return 'Pullquote…';
+    return 'Write here…';
+  };
   const activeBlock = document.blocks.find(b => b.id === activeId) || document.blocks[0];
   const canUndo = history.current.past.length > 0; const canRedo = history.current.future.length > 0;
   const canFormatInline = activeBlock && canHoldRuns(activeBlock);
@@ -552,6 +686,16 @@ export default function App() {
             {block.type === 'divider' ? <>
               <div className="divider-line" role="separator" aria-label="Divider"/>
               {activeId === block.id && document.blocks.length > 1 && <button type="button" className="block-delete divider-delete" aria-label="Delete divider" onClick={event => { event.stopPropagation(); removeBlock(block.id); }}><Icon name="trash" size={15}/></button>}
+            </> : block.type === 'list' ? <>
+              {activeId === block.id && document.blocks.length > 1 && <button type="button" className="block-delete" aria-label="Delete list" onClick={event => { event.stopPropagation(); removeBlock(block.id); }}><Icon name="trash" size={15}/></button>}
+              <div className="list-block">
+                {block.items.map((item, itemIndex) => <div key={item.id} className="list-item" onClick={event => event.stopPropagation()}>
+                  {block.style === 'checklist'
+                    ? <button type="button" className={`list-checkbox ${item.checked ? 'checked' : ''}`} aria-label={item.checked ? 'Mark as not done' : 'Mark as done'} onClick={() => toggleListItemChecked(block.id, item.id)}>{item.checked && <Icon name="check" size={13}/>}</button>
+                    : <span className="list-marker">{block.style === 'number' ? `${itemIndex + 1}.` : '•'}</span>}
+                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onKeyDown={event => handleListItemKeyDown(event, block, item, itemIndex)}/>
+                </div>)}
+              </div>
             </> : <>
               {block.type === 'pre' && <div className="code-tools" onClick={event => event.stopPropagation()}>
                 <button type="button" className="code-language-button" aria-label="Set code language" aria-expanded={languageOpenId === block.id} onClick={() => { setActiveId(block.id); setLanguageOpenId(open => open === block.id ? null : block.id); setFormatOpen(false); }}>
@@ -563,7 +707,7 @@ export default function App() {
               {block.type !== 'pre' && activeId === block.id && document.blocks.length > 1 && <button type="button" className="block-delete" aria-label={`Delete ${block.type}`} onClick={event => { event.stopPropagation(); removeBlock(block.id); }}><Icon name="trash" size={15}/></button>}
               {block.type === 'pre'
                 ? <textarea ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable code-editor" value={block.text} rows={4} wrap="off" spellCheck={false} aria-label="Code block" aria-multiline="true" placeholder={placeholder(block)} onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()} onChange={event => updateText(block.id, event.currentTarget.value)} onKeyDown={event => handleKeyDown(event, block)}/>
-                : <div ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable" contentEditable suppressContentEditableWarning spellCheck role="textbox" aria-multiline="true" aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'footer' ? 'Footer' : 'Paragraph'} data-placeholder={placeholder(block)}
+                : <div ref={node => { if (node) editorRefs.current.set(block.id, node); else editorRefs.current.delete(block.id); }} className="editable" contentEditable suppressContentEditableWarning spellCheck role="textbox" aria-multiline="true" aria-label={block.type === 'heading' ? `Heading ${block.size}` : block.type === 'footer' ? 'Footer' : block.type === 'blockquote' ? 'Blockquote' : block.type === 'pullquote' ? 'Pullquote' : 'Paragraph'} data-placeholder={placeholder(block)}
                     onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()}
                     onInput={event => {
                       const rawRuns = domToRuns(event.currentTarget);
@@ -574,6 +718,13 @@ export default function App() {
                     }}
                     onPaste={event => { event.preventDefault(); const text = (event.clipboardData || window.clipboardData)?.getData('text/plain') || ''; if (text) insertPlainText(block.id, text); }}
                     onKeyDown={event => handleKeyDown(event, block)}/>}
+              {(block.type === 'blockquote' || block.type === 'pullquote') && (block.credit !== null
+                ? <div className="quote-credit-row" onClick={event => event.stopPropagation()}>
+                    <span className="quote-credit-dash">—</span>
+                    <input type="text" className="quote-credit-input" placeholder="Credit (optional)" value={block.credit} onFocus={() => setActiveId(block.id)} onChange={event => updateCredit(block.id, event.currentTarget.value)}/>
+                    <button type="button" className="quote-credit-remove" aria-label="Remove credit" onClick={() => updateCredit(block.id, null)}><Icon name="close" size={12}/></button>
+                  </div>
+                : activeId === block.id && <button type="button" className="quote-add-credit" onClick={event => { event.stopPropagation(); updateCredit(block.id, ''); }}>+ Add credit</button>)}
             </>}
           </div>
         </React.Fragment>)}
@@ -585,7 +736,7 @@ export default function App() {
     </div>)}</div>}
     <footer className="composer-bar"><div className="toolbar">
       <div className="format-wrap"><button className={`tool-button heading-tool ${formatOpen ? 'selected' : ''}`} aria-label="Text and block formatting" aria-expanded={formatOpen} onClick={event => { event.stopPropagation(); setLanguageOpenId(null); setInlineOpen(false); setFormatOpen(open => !open); }}>H</button>
-        {formatOpen && <div className="format-menu" onClick={event => event.stopPropagation()}><div className="format-menu-title">Text format</div><button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}><span className="menu-heading paragraph-icon">P</span><span>Paragraph</span>{activeBlock?.type === 'paragraph' && <Icon name="check" size={21}/>}</button>{HEADING_OPTIONS.map(option => <button key={option.size} className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'} onClick={() => changeType('heading', option.size)}><span className={`menu-heading h-${option.size}`}>H{option.size}</span><span>{option.label}</span>{activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21}/>}</button>)}<div className="format-menu-title block-title">Blocks</div>{BLOCK_OPTIONS.map(option => <button key={option.type} className={activeBlock?.type === option.type ? 'menu-item active' : 'menu-item'} onClick={() => changeType(option.type)}><span className={`menu-heading block-icon ${option.type}`}>{option.icon}</span><span>{option.label}</span>{activeBlock?.type === option.type && <Icon name="check" size={21}/>}</button>)}</div>}
+        {formatOpen && <div className="format-menu" onClick={event => event.stopPropagation()}><div className="format-menu-title">Text format</div><button className={activeBlock?.type === 'paragraph' ? 'menu-item active' : 'menu-item'} onClick={() => changeType('paragraph')}><span className="menu-heading paragraph-icon">P</span><span>Paragraph</span>{activeBlock?.type === 'paragraph' && <Icon name="check" size={21}/>}</button>{HEADING_OPTIONS.map(option => <button key={option.size} className={activeBlock?.type === 'heading' && activeBlock.size === option.size ? 'menu-item active' : 'menu-item'} onClick={() => changeType('heading', option.size)}><span className={`menu-heading h-${option.size}`}>H{option.size}</span><span>{option.label}</span>{activeBlock?.type === 'heading' && activeBlock.size === option.size && <Icon name="check" size={21}/>}</button>)}<div className="format-menu-title block-title">Blocks</div>{BLOCK_OPTIONS.map(option => { const isListOption = LIST_STYLE_TYPES.has(option.type); const listStyle = option.type === 'list-bullet' ? 'bullet' : option.type === 'list-number' ? 'number' : option.type === 'list-checklist' ? 'checklist' : null; const isActive = isListOption ? activeBlock?.type === 'list' && activeBlock.style === listStyle : activeBlock?.type === option.type; return <button key={option.type} className={isActive ? 'menu-item active' : 'menu-item'} onClick={() => changeType(option.type)}><span className={`menu-heading block-icon ${option.type}`}>{option.icon}</span><span>{option.label}</span>{isActive && <Icon name="check" size={21}/>}</button>; })}</div>}
       </div>
       <div className="format-wrap"><button type="button" className={`tool-button inline-tool ${inlineOpen ? 'selected' : ''}`} aria-label="Inline text formatting" aria-expanded={inlineOpen} disabled={!canFormatInline} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); openInlineMenu(); }}>B</button>
         {inlineOpen && <div className="format-menu" onClick={event => event.stopPropagation()}>

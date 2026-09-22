@@ -146,6 +146,46 @@ function validateDocument(input) {
         return { type: 'pre', text: block.text, ...(language ? { language } : {}) };
       }
 
+      if (block.type === 'list') {
+        if (!Array.isArray(block.items)) throw new Error('Invalid list.');
+        const items = block.items
+          .filter((item) => item && typeof item === 'object')
+          .map((item) => {
+            if (typeof item.label !== 'string') throw new Error('Invalid list item.');
+            if (!Array.isArray(item.blocks) || item.blocks.length !== 1 || item.blocks[0]?.type !== 'paragraph') throw new Error('Invalid list item content.');
+            const text = normalizeRichText(item.blocks[0].text);
+            if (richTextLength(text) === 0) return null;
+            const out = { label: item.label, blocks: [{ type: 'paragraph', text }] };
+            if (item.type !== undefined) {
+              if (!['a', 'A', 'i', 'I', '1'].includes(item.type)) throw new Error('Invalid ordered list item type.');
+              out.type = item.type;
+              if (item.value !== undefined) { if (!Number.isInteger(item.value)) throw new Error('Invalid list item value.'); out.value = item.value; }
+            }
+            if (item.has_checkbox !== undefined) { out.has_checkbox = !!item.has_checkbox; out.is_checked = !!item.is_checked; }
+            return out;
+          })
+          .filter(Boolean);
+        if (!items.length) return null;
+        return { type: 'list', items };
+      }
+
+      if (block.type === 'blockquote') {
+        if (!Array.isArray(block.blocks) || block.blocks.length !== 1 || block.blocks[0]?.type !== 'paragraph') throw new Error('Invalid blockquote content.');
+        const text = normalizeRichText(block.blocks[0].text);
+        if (richTextLength(text) === 0) return null;
+        const out = { type: 'blockquote', blocks: [{ type: 'paragraph', text }] };
+        if (block.credit !== undefined) out.credit = normalizeRichText(block.credit);
+        return out;
+      }
+
+      if (block.type === 'pullquote') {
+        const text = normalizeRichText(block.text);
+        if (richTextLength(text) === 0) return null;
+        const out = { type: 'pullquote', text };
+        if (block.credit !== undefined) out.credit = normalizeRichText(block.credit);
+        return out;
+      }
+
       if (!['paragraph', 'heading', 'footer'].includes(block.type)) throw new Error(`Unsupported block type: ${block.type || 'unknown'}.`);
 
       const text = normalizeRichText(block.text);
@@ -165,6 +205,9 @@ function validateDocument(input) {
   const textLength = blocks.reduce((total, block) => {
     if (block.type === 'divider') return total;
     if (block.type === 'pre') return total + [...block.text].length;
+    if (block.type === 'list') return total + block.items.reduce((sum, item) => sum + richTextLength(item.blocks[0].text), 0);
+    if (block.type === 'blockquote') return total + richTextLength(block.blocks[0].text) + (block.credit ? richTextLength(block.credit) : 0);
+    if (block.type === 'pullquote') return total + richTextLength(block.text) + (block.credit ? richTextLength(block.credit) : 0);
     return total + richTextLength(block.text);
   }, 0);
   if (textLength > MAX_TEXT) throw new Error('Rich Message text is over Telegram’s 32,768 character limit.');

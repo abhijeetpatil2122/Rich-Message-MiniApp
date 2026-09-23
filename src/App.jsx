@@ -461,15 +461,23 @@ export default function App() {
     setActiveId(paragraph.id); pendingFocus.current = { id: paragraph.id, start: 0, end: 0 };
   };
 
-  const handleListItemKeyDown = (event, block, item, itemIndex) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
-      const input = event.currentTarget;
-      const start = input.selectionStart ?? item.text.length; const end = input.selectionEnd ?? item.text.length;
-      splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
-      return;
-    }
+  // Enter is handled here, not in onKeyDown: many Android soft keyboards
+  // (IME composition) don't reliably fire a keydown with key 'Enter' at
+  // all, but the standards-based beforeinput event with inputType
+  // 'insertParagraph'/'insertLineBreak' fires consistently everywhere,
+  // including through IME composition. This is what was actually breaking
+  // "Enter adds a new list item".
+  const handleListItemBeforeInput = (event, block, item, itemIndex) => {
+    const inputType = event.nativeEvent?.inputType;
+    if (inputType !== 'insertParagraph' && inputType !== 'insertLineBreak') return;
+    event.preventDefault();
+    if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? item.text.length; const end = input.selectionEnd ?? item.text.length;
+    splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
+  };
+
+  const handleListItemKeyDown = (event, block, item) => {
     if (event.key === 'Backspace') {
       const input = event.currentTarget;
       const atStart = (input.selectionStart ?? 0) === 0 && (input.selectionEnd ?? 0) === 0;
@@ -525,19 +533,22 @@ export default function App() {
     setActiveId(tail.id); pendingFocus.current = { id: tail.id, start: lastLine.length, end: lastLine.length };
   };
 
+  // Same beforeinput-based approach as list items, for the same reason:
+  // Android IME keyboards don't reliably fire a keydown for Enter.
+  const handleBeforeInput = (event, block) => {
+    const inputType = event.nativeEvent?.inputType;
+    if (inputType !== 'insertParagraph' && inputType !== 'insertLineBreak') return;
+    event.preventDefault();
+    const node = event.currentTarget;
+    const fullText = runsText(block.runs);
+    const offsets = getCaretOffsets(node);
+    const start = offsets ? offsets.start : fullText.length;
+    const end = offsets ? offsets.end : fullText.length;
+    splitBlock(block.id, sliceRuns(block.runs, 0, start), sliceRuns(block.runs, end, fullText.length));
+  };
+
   const handleKeyDown = (event, block) => {
     if (block.type === 'pre') { if (event.key === 'Backspace' && block.text === '') { event.preventDefault(); removeBlock(block.id); } return; }
-
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const node = editorRefs.current.get(block.id);
-      const fullText = runsText(block.runs);
-      const offsets = node ? getCaretOffsets(node) : null;
-      const start = offsets ? offsets.start : fullText.length;
-      const end = offsets ? offsets.end : fullText.length;
-      splitBlock(block.id, sliceRuns(block.runs, 0, start), sliceRuns(block.runs, end, fullText.length));
-      return;
-    }
 
     if (event.key === 'Backspace') {
       if (runsText(block.runs) === '') { event.preventDefault(); removeBlock(block.id); return; }
@@ -693,7 +704,7 @@ export default function App() {
                   {block.style === 'checklist'
                     ? <button type="button" className={`list-checkbox ${item.checked ? 'checked' : ''}`} aria-label={item.checked ? 'Mark as not done' : 'Mark as done'} onClick={() => toggleListItemChecked(block.id, item.id)}>{item.checked && <Icon name="check" size={13}/>}</button>
                     : <span className="list-marker">{block.style === 'number' ? `${itemIndex + 1}.` : '•'}</span>}
-                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onKeyDown={event => handleListItemKeyDown(event, block, item, itemIndex)}/>
+                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onBeforeInput={event => handleListItemBeforeInput(event, block, item, itemIndex)} onKeyDown={event => handleListItemKeyDown(event, block, item)}/>
                 </div>)}
               </div>
             </> : <>
@@ -717,6 +728,7 @@ export default function App() {
                       commit({ ...document, blocks: document.blocks.map(b => b.id === block.id ? { ...b, runs } : b) }, { coalesce: true });
                     }}
                     onPaste={event => { event.preventDefault(); const text = (event.clipboardData || window.clipboardData)?.getData('text/plain') || ''; if (text) insertPlainText(block.id, text); }}
+                    onBeforeInput={event => handleBeforeInput(event, block)}
                     onKeyDown={event => handleKeyDown(event, block)}/>}
               {(block.type === 'blockquote' || block.type === 'pullquote') && (block.credit !== null
                 ? <div className="quote-credit-row" onClick={event => event.stopPropagation()}>

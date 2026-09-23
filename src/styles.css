@@ -55,9 +55,8 @@ button { font: inherit; color: inherit; border: 0; }
 .divider-line { height: 1px; width: 100%; background: var(--separator); }
 
 .blockquote-block { padding: 6px 0 6px 16px; border-left: 3px solid color-mix(in srgb, var(--button) 55%, transparent) !important; }
-.blockquote-block .editable { font-style: italic; color: color-mix(in srgb, var(--text) 88%, transparent); }
 .pullquote-block { padding: 14px 4px; text-align: center; }
-.pullquote-block .editable { font-family: Georgia, "Times New Roman", serif; font-size: 24px; line-height: 1.3; font-weight: 600; }
+.pullquote-block .editable { font-style: italic; }
 .quote-credit-row { margin-top: 6px; display: flex; align-items: center; gap: 6px; }
 .blockquote-block .quote-credit-row { padding-left: 0; }
 .pullquote-block .quote-credit-row { justify-content: center; }
@@ -74,7 +73,6 @@ button { font: inherit; color: inherit; border: 0; }
 .list-checkbox { flex-shrink: 0; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid color-mix(in srgb, var(--text) 35%, transparent); display: grid; place-items: center; background: transparent; color: var(--button-text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .list-checkbox.checked { background: var(--button); border-color: var(--button); }
 .list-item-input { flex: 1; min-width: 0; height: 30px; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 19px; outline: none; }
-.list-item-input.checked { color: var(--hint); text-decoration: line-through; }
 .list-item-input::placeholder { color: var(--hint); }
 
 .block-delete { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--destructive); cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }

@@ -1,5 +1,5 @@
 import React,{useRef,useState}from'react';
-import{createInitialDocument}from'../document/schema.js';import{changeType,mergePrevious,removeBlock,splitListItem,splitTextBlock,updateListItem}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';
+import{createInitialDocument}from'../document/schema.js';import{changeType,mergePrevious,removeBlock,splitListItem,splitTextBlock,updateListItem,removeListItem}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';
 
 function caret(node){const s=getSelection();if(!s?.rangeCount)return(node.textContent||'').length;const r=s.getRangeAt(0),p=r.cloneRange();p.selectNodeContents(node);p.setEnd(r.startContainer,r.startOffset);return p.toString().length}
 function focus(id,offset=0){requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(id)+'"]');if(!node)return;node.focus();const r=document.createRange(),w=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let n,left=offset;r.selectNodeContents(node);r.collapse(true);while((n=w.nextNode())){if(left<=n.length){r.setStart(n,left);r.collapse(true);break}left-=n.length}const s=getSelection();s.removeAllRanges();s.addRange(r)})}

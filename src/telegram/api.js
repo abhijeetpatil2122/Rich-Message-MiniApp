@@ -1,0 +1,2 @@
+import {getTelegramWebApp} from './webApp.js';
+export async function postTelegram(action,payload={}){const app=getTelegramWebApp();const initData=app?.initData||'';if(!initData)throw new Error('Open this app from Telegram to continue.');const r=await fetch('/api/telegram',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,initData,...payload})});const data=await r.json().catch(()=>({}));if(!r.ok||!data.ok)throw new Error(data.error||'Request failed.');return data;}

@@ -1,8 +1,1 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/telegram.js": {
-      "maxDuration": 10
-    }
-  }
-}
+{"$schema":"https://openapi.vercel.sh/vercel.json","functions":{"api/telegram.js":{"maxDuration":10}}}

@@ -1,0 +1,6 @@
+const INDEX='rich_channels_index',PREFIX='rich_channel_';
+const api=()=>window.Telegram?.WebApp?.CloudStorage;
+function call(method,...args){return new Promise((resolve,reject)=>{if(!api?.[method])return reject(new Error('Telegram CloudStorage is unavailable.'));api[method](...args,(error,value)=>error?reject(new Error(error)):resolve(value));});}
+export async function loadChannels(){const raw=await call('getItem',INDEX).catch(()=> '[]');let ids=[];try{ids=JSON.parse(raw)||[];}catch{}if(!ids.length)return[];const values=await call('getItems',ids.map(id=>PREFIX+id));return ids.map(id=>values?.[PREFIX+id]).filter(Boolean).map(v=>JSON.parse(v));}
+export async function saveChannel(channel){const old=await loadChannels(),ids=old.map(x=>String(x.id));if(!ids.includes(String(channel.id)))ids.push(String(channel.id));await call('setItem',INDEX,JSON.stringify(ids));await call('setItem',PREFIX+channel.id,JSON.stringify(channel));return[...old.filter(x=>String(x.id)!==String(channel.id)),channel];}
+export async function removeChannel(id){const old=await loadChannels(),ids=old.map(x=>String(x.id)).filter(x=>x!==String(id));await call('setItem',INDEX,JSON.stringify(ids));await call('removeItem',PREFIX+id);return old.filter(x=>String(x.id)!==String(id));}

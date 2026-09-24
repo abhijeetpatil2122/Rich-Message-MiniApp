@@ -1,19 +1,19 @@
 import React,{useEffect,useState}from'react';
 import RichEditor from'../editor/RichEditor.jsx';import ProfilePage from'../profile/ProfilePage.jsx';
 import {configureTelegramNavigation,getTelegramUser,initTelegramWebApp,setTelegramNavigation,telegramHaptic,telegramImpact,telegramPopup}from'../telegram/webApp.js';
-import{loadChannels}from'../channels/channelStorage.js';import{postTelegram}from'../telegram/api.js';import{SendHorizontal,UserRound,X}from'lucide-react';
+import{loadChannels}from'../channels/channelStorage.js';import{postTelegram}from'../telegram/api.js';import{Check,SendHorizontal,UserRound,X}from'lucide-react';
 
 function Avatar({user}){const[fallback,setFallback]=useState(false);return user?.photo_url&&!fallback?<img src={user.photo_url} className="user-avatar" alt="" onError={()=>setFallback(true)}/>:<span className="user-avatar fallback"><UserRound size={19}/></span>;}
 
-function SendSheet({document,onClose,user}){
-  const[channels,setChannels]=useState([]),[busy,setBusy]=useState(false),[closing,setClosing]=useState(false);
+function SendSheet({document,onClose,onSuccess,user}){
+  const[channels,setChannels]=useState([]),[busy,setBusy]=useState(false),[closing,setClosing]=useState(false),[successText,setSuccessText]=useState('');
   useEffect(()=>{loadChannels().then(setChannels).catch(()=>{});const onKey=e=>{if(e.key==='Escape')close()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
   function close(){if(closing)return;setClosing(true);telegramImpact('light')}
-  function finishClose(){if(closing)onClose()}
+  function finishClose(){if(!closing)return;onClose();if(successText)onSuccess?.(successText)}
   async function send(target){
     if(busy)return;
     setBusy(true);telegramImpact('light');
-    try{await postTelegram('sendRichMessage',{document,target});telegramHaptic('success');close()}
+    try{await postTelegram('sendRichMessage',{document,target});const channel=target.type==='channel'?channels.find(c=>String(c.id)===String(target.chat_id)):null;setSuccessText(target.type==='channel'?`Message sent to ${channel?.title||channel?.username||target.chat_id}`:'Message sent to your private chat');telegramHaptic('success');close()}
     catch(e){telegramHaptic('error');await telegramPopup({title:'Could not send',message:e?.message||'The message could not be sent.',buttons:[{id:'close',type:'close'}]})}
     finally{setBusy(false)}
   }
@@ -38,4 +38,4 @@ function SendSheet({document,onClose,user}){
   </div>
 }
 
-export default function App(){const[page,setPage]=useState('editor'),[sendDoc,setSendDoc]=useState(null),user=getTelegramUser();useEffect(()=>{initTelegramWebApp();return configureTelegramNavigation({onBack:()=>setPage('editor'),onSettings:()=>setPage('profile')})},[]);useEffect(()=>{setTelegramNavigation({showBack:page==='profile',showSettings:page==='editor'})},[page]);if(page==='profile')return <ProfilePage/>;return <div className="app"><RichEditor onSend={setSendDoc}/><button className="profile-button" onClick={()=>setPage('profile')} aria-label="Open profile"><Avatar user={user}/></button>{sendDoc&&<SendSheet document={sendDoc} user={user} onClose={()=>setSendDoc(null)}/>}</div>}
+export default function App(){const[page,setPage]=useState('editor'),[sendDoc,setSendDoc]=useState(null),[sendNotice,setSendNotice]=useState(''),user=getTelegramUser();useEffect(()=>{initTelegramWebApp();return configureTelegramNavigation({onBack:()=>setPage('editor'),onSettings:()=>setPage('profile')})},[]);useEffect(()=>{setTelegramNavigation({showBack:page==='profile',showSettings:page==='editor'})},[page]);useEffect(()=>{if(!sendNotice)return;const timer=setTimeout(()=>setSendNotice(''),3200);return()=>clearTimeout(timer)},[sendNotice]);if(page==='profile')return <ProfilePage/>;return <div className="app"><RichEditor onSend={document=>{setSendNotice('');setSendDoc(document)}}/><button className="profile-button" onClick={()=>setPage('profile')} aria-label="Open profile"><Avatar user={user}/></button>{sendDoc&&<SendSheet document={sendDoc} user={user} onSuccess={message=>{setSendNotice(message)}} onClose={()=>setSendDoc(null}/>}</div>}

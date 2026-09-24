@@ -10,7 +10,7 @@ const menuItems=[
  {type:'paragraph',label:'Paragraph',Icon:Pilcrow},
  {type:'heading',size:1,label:'Heading 1',Icon:Heading1},{type:'heading',size:2,label:'Heading 2',Icon:Heading2},{type:'heading',size:3,label:'Heading 3',Icon:Heading3},{type:'heading',size:4,label:'Heading 4',Icon:Heading4},{type:'heading',size:5,label:'Heading 5',Icon:Heading5},{type:'heading',size:6,label:'Heading 6',Icon:Heading6},
  {divider:true},
- {type:'pre',label:'Code block',Icon:Code2},{type:'footer',label:'Footer',Icon:Paragraph},{type:'blockquote',label:'Blockquote',Icon:Quote},{type:'pullquote',label:'Pullquote',Icon:Quote},
+ {type:'pre',label:'Code block',Icon:Code2},{type:'footer',label:'Footer',Icon:Pilcrow},{type:'blockquote',label:'Blockquote',Icon:Quote},{type:'pullquote',label:'Pullquote',Icon:Quote},
  {divider:true},
  {type:'list-bullet',label:'Bulleted list',Icon:List},{type:'list-number',label:'Numbered list',Icon:ListOrdered},{type:'list-checklist',label:'Checklist',Icon:ListChecks},{type:'divider',label:'Divider',Icon:Minus}
 ];

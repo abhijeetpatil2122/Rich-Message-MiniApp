@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState}from'react';
-import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Paragraph,Quote,Redo2,Undo2,Check}from'lucide-react';
+import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,Redo2,Undo2,Check}from'lucide-react';
 import{createInitialDocument}from'../document/schema.js';import{changeType,mergePrevious,removeBlock,splitListItem,splitTextBlock,updateListItem,removeListItem}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{configureTelegramMainButton,setTelegramMainButton,telegramHaptic}from'../telegram/webApp.js';
 
 function caret(node){const s=getSelection();if(!s?.rangeCount)return(node.textContent||'').length;const r=s.getRangeAt(0),p=r.cloneRange();p.selectNodeContents(node);p.setEnd(r.startContainer,r.startOffset);return p.toString().length}
@@ -7,7 +7,7 @@ function focus(id,offset=0){requestAnimationFrame(()=>{const node=document.query
 function Editable({id,text,placeholder,className='',onChange,onKeyDown}){const ref=useRef(null);const last=useRef(text);React.useEffect(()=>{if(ref.current&&document.activeElement!==ref.current&&last.current!==text){ref.current.textContent=text;last.current=text}},[text]);return <div ref={n=>{ref.current=n;if(n&&n.textContent!==text&&!n.isContentEditable)n.textContent=text}} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} onInput={e=>{last.current=e.currentTarget.textContent||'';onChange(last.current)}} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
 
 const menuItems=[
- {type:'paragraph',label:'Paragraph',Icon:Paragraph},
+ {type:'paragraph',label:'Paragraph',Icon:Pilcrow},
  {type:'heading',size:1,label:'Heading 1',Icon:Heading1},{type:'heading',size:2,label:'Heading 2',Icon:Heading2},{type:'heading',size:3,label:'Heading 3',Icon:Heading3},{type:'heading',size:4,label:'Heading 4',Icon:Heading4},{type:'heading',size:5,label:'Heading 5',Icon:Heading5},{type:'heading',size:6,label:'Heading 6',Icon:Heading6},
  {divider:true},
  {type:'pre',label:'Code block',Icon:Code2},{type:'footer',label:'Footer',Icon:Paragraph},{type:'blockquote',label:'Blockquote',Icon:Quote},{type:'pullquote',label:'Pullquote',Icon:Quote},

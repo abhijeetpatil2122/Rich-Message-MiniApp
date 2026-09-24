@@ -5,3 +5,4 @@ export function configureTelegramNavigation({onBack,onSettings}){const app=getTe
 export function setTelegramNavigation({showBack=false,showSettings=false}={}){const app=getTelegramWebApp();if(!app)return;showBack?app.BackButton?.show?.():app.BackButton?.hide?.();showSettings?app.SettingsButton?.show?.():app.SettingsButton?.hide?.();}
 export function telegramHaptic(type='success'){getTelegramWebApp()?.HapticFeedback?.notificationOccurred?.(type);}
 export function telegramImpact(style='light'){getTelegramWebApp()?.HapticFeedback?.impactOccurred?.(style);}
+export function telegramPopup({title='Confirm action',message,buttons}){const app=getTelegramWebApp();return new Promise(resolve=>{if(!app?.showPopup){app?.showConfirm?.(message||'',ok=>resolve(Boolean(ok)));return}app.showPopup({title,message,buttons},id=>resolve(id));});}

@@ -1,6 +1,6 @@
 import React,{useEffect,useState}from'react';
 import RichEditor from'../editor/RichEditor.jsx';import ProfilePage from'../profile/ProfilePage.jsx';
-import {configureTelegramNavigation,getTelegramUser,initTelegramWebApp,setTelegramNavigation,telegramHaptic,telegramPopup}from'../telegram/webApp.js';
+import {configureTelegramNavigation,getTelegramUser,initTelegramWebApp,setTelegramNavigation,telegramHaptic,telegramImpact,telegramPopup}from'../telegram/webApp.js';
 import{loadChannels}from'../channels/channelStorage.js';import{postTelegram}from'../telegram/api.js';import{SendHorizontal,UserRound,X}from'lucide-react';
 
 function Avatar({user}){const[fallback,setFallback]=useState(false);return user?.photo_url&&!fallback?<img src={user.photo_url} className="user-avatar" alt="" onError={()=>setFallback(true)}/>:<span className="user-avatar fallback"><UserRound size={19}/></span>;}
@@ -8,11 +8,11 @@ function Avatar({user}){const[fallback,setFallback]=useState(false);return user?
 function SendSheet({document,onClose,user}){
   const[channels,setChannels]=useState([]),[busy,setBusy]=useState(false),[closing,setClosing]=useState(false);
   useEffect(()=>{loadChannels().then(setChannels).catch(()=>{});const onKey=e=>{if(e.key==='Escape')close()};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
-  function close(){if(closing)return;setClosing(true);telegramHaptic('light')}
+  function close(){if(closing)return;setClosing(true);telegramImpact('light')}
   function finishClose(){if(closing)onClose()}
   async function send(target){
     if(busy)return;
-    setBusy(true);telegramHaptic('light');
+    setBusy(true);telegramImpact('light');
     try{await postTelegram('sendRichMessage',{document,target});telegramHaptic('success');close()}
     catch(e){telegramHaptic('error');await telegramPopup({title:'Could not send',message:e?.message||'The message could not be sent.',buttons:[{id:'close',type:'close'}]})}
     finally{setBusy(false)}

@@ -70,12 +70,18 @@ const runsToHTML = runs => (runs || []).map(runToHTML).join('');
 // Reconstructs runs by walking the contentEditable's actual DOM after a
 // native edit (typing, browser-native formatting, etc.). Any element we
 // don't recognize is walked through with no formatting added, which
-// doubles as a cheap safety net against unexpected pasted markup.
+// doubles as a cheap safety net against unexpected pasted markup. A <br>,
+// or a nested <div>/<p> (what Chrome/WebView insert natively for Enter
+// inside a contentEditable when our own interception doesn't catch it in
+// time), is surfaced as a literal '\n' — the caller then converts that
+// into a real block split, the same way a multi-line paste is handled.
 function domToRuns(node) {
   const runs = [];
+  const BLOCK_TAGS = new Set(['DIV', 'P']);
   const walk = (n, marks, link) => {
     if (n.nodeType === 3) { if (n.data) runs.push(createRun(n.data, marks, link)); return; }
     if (n.nodeType !== 1) return;
+    if (n.tagName === 'BR') { runs.push(createRun('\n', [], null)); return; }
     const tag = n.tagName.toLowerCase();
     let nextMarks = marks; let nextLink = link;
     if (tag === 'b' || tag === 'strong') nextMarks = [...marks, 'bold'];
@@ -91,7 +97,11 @@ function domToRuns(node) {
     nextMarks = [...new Set(nextMarks)];
     for (const child of Array.from(n.childNodes)) walk(child, nextMarks, nextLink);
   };
-  for (const child of Array.from(node.childNodes)) walk(child, [], null);
+  const children = Array.from(node.childNodes);
+  children.forEach((child, index) => {
+    if (index > 0 && child.nodeType === 1 && BLOCK_TAGS.has(child.tagName)) runs.push(createRun('\n', [], null));
+    walk(child, [], null);
+  });
   return mergeRuns(runs);
 }
 
@@ -461,23 +471,23 @@ export default function App() {
     setActiveId(paragraph.id); pendingFocus.current = { id: paragraph.id, start: 0, end: 0 };
   };
 
-  // Enter is handled here, not in onKeyDown: many Android soft keyboards
-  // (IME composition) don't reliably fire a keydown with key 'Enter' at
-  // all, but the standards-based beforeinput event with inputType
-  // 'insertParagraph'/'insertLineBreak' fires consistently everywhere,
-  // including through IME composition. This is what was actually breaking
-  // "Enter adds a new list item".
-  const handleListItemBeforeInput = (event, block, item, itemIndex) => {
-    const inputType = event.nativeEvent?.inputType;
-    if (inputType !== 'insertParagraph' && inputType !== 'insertLineBreak') return;
-    event.preventDefault();
-    if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
-    const input = event.currentTarget;
-    const start = input.selectionStart ?? item.text.length; const end = input.selectionEnd ?? item.text.length;
-    splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
-  };
-
-  const handleListItemKeyDown = (event, block, item) => {
+  // Enter is handled directly on keydown here. Unlike the rich
+  // contentEditable blocks, a single-line <input> structurally can't ever
+  // contain a '\n' character, so there's no "let it happen, detect after"
+  // fallback available — this has to be caught before the OS keyboard
+  // decides what Enter means. Android soft keyboards often default an
+  // <input>'s Enter key to a "move to next field" action instead of a real
+  // keypress unless told otherwise, which is why the input also declares
+  // enterKeyHint="enter" below.
+  const handleListItemKeyDown = (event, block, item, itemIndex) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
+      const input = event.currentTarget;
+      const start = input.selectionStart ?? item.text.length; const end = input.selectionEnd ?? item.text.length;
+      splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
+      return;
+    }
     if (event.key === 'Backspace') {
       const input = event.currentTarget;
       const atStart = (input.selectionStart ?? 0) === 0 && (input.selectionEnd ?? 0) === 0;
@@ -533,22 +543,33 @@ export default function App() {
     setActiveId(tail.id); pendingFocus.current = { id: tail.id, start: lastLine.length, end: lastLine.length };
   };
 
-  // Same beforeinput-based approach as list items, for the same reason:
-  // Android IME keyboards don't reliably fire a keydown for Enter.
-  const handleBeforeInput = (event, block) => {
-    const inputType = event.nativeEvent?.inputType;
-    if (inputType !== 'insertParagraph' && inputType !== 'insertLineBreak') return;
-    event.preventDefault();
-    const node = event.currentTarget;
-    const fullText = runsText(block.runs);
-    const offsets = getCaretOffsets(node);
-    const start = offsets ? offsets.start : fullText.length;
-    const end = offsets ? offsets.end : fullText.length;
-    splitBlock(block.id, sliceRuns(block.runs, 0, start), sliceRuns(block.runs, end, fullText.length));
+  // Fallback net for onInput: if a native Enter still slipped past
+  // handleKeyDown's preventDefault (some webviews don't honor it
+  // consistently) and the browser inserted its own line break, domToRuns
+  // will have surfaced it as a literal '\n'. Convert that into a real block
+  // split after the fact — the same principle as the sticky-formatting fix:
+  // don't fight the browser's write, correct the result.
+  const resolveNewlineSplit = (blockId, rawRuns) => {
+    const text = runsText(rawRuns);
+    const newlineIndex = text.indexOf('\n');
+    if (newlineIndex < 0) return false;
+    splitBlock(blockId, sliceRuns(rawRuns, 0, newlineIndex), sliceRuns(rawRuns, newlineIndex + 1, text.length));
+    return true;
   };
 
   const handleKeyDown = (event, block) => {
     if (block.type === 'pre') { if (event.key === 'Backspace' && block.text === '') { event.preventDefault(); removeBlock(block.id); } return; }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const node = editorRefs.current.get(block.id);
+      const fullText = runsText(block.runs);
+      const offsets = node ? getCaretOffsets(node) : null;
+      const start = offsets ? offsets.start : fullText.length;
+      const end = offsets ? offsets.end : fullText.length;
+      splitBlock(block.id, sliceRuns(block.runs, 0, start), sliceRuns(block.runs, end, fullText.length));
+      return;
+    }
 
     if (event.key === 'Backspace') {
       if (runsText(block.runs) === '') { event.preventDefault(); removeBlock(block.id); return; }
@@ -704,7 +725,7 @@ export default function App() {
                   {block.style === 'checklist'
                     ? <button type="button" className={`list-checkbox ${item.checked ? 'checked' : ''}`} aria-label={item.checked ? 'Mark as not done' : 'Mark as done'} onClick={() => toggleListItemChecked(block.id, item.id)}>{item.checked && <Icon name="check" size={13}/>}</button>
                     : <span className="list-marker">{block.style === 'number' ? `${itemIndex + 1}.` : '•'}</span>}
-                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onBeforeInput={event => handleListItemBeforeInput(event, block, item, itemIndex)} onKeyDown={event => handleListItemKeyDown(event, block, item)}/>
+                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" enterKeyHint="enter" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onKeyDown={event => handleListItemKeyDown(event, block, item, itemIndex)}/>
                 </div>)}
               </div>
             </> : <>
@@ -722,13 +743,14 @@ export default function App() {
                     onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()}
                     onInput={event => {
                       const rawRuns = domToRuns(event.currentTarget);
+                      if (resolveNewlineSplit(block.id, rawRuns)) return;
                       const { runs, corrected, caretOffset } = resolveTypedRuns(block.runs, rawRuns);
                       if (corrected) pendingFocus.current = { id: block.id, start: caretOffset, end: caretOffset };
                       else lastRenderedRuns.current.set(block.id, runs);
                       commit({ ...document, blocks: document.blocks.map(b => b.id === block.id ? { ...b, runs } : b) }, { coalesce: true });
                     }}
                     onPaste={event => { event.preventDefault(); const text = (event.clipboardData || window.clipboardData)?.getData('text/plain') || ''; if (text) insertPlainText(block.id, text); }}
-                    onBeforeInput={event => handleBeforeInput(event, block)}
+                    enterKeyHint="enter"
                     onKeyDown={event => handleKeyDown(event, block)}/>}
               {(block.type === 'blockquote' || block.type === 'pullquote') && (block.credit !== null
                 ? <div className="quote-credit-row" onClick={event => event.stopPropagation()}>

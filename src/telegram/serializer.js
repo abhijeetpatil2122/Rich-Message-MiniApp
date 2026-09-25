@@ -12,7 +12,7 @@ function richFromNode(node){
   if(type==='hashtag')return{type,text:text(),hashtag:el.dataset.value||el.textContent||''};
   if(type==='cashtag')return{type,text:text(),cashtag:el.dataset.value||el.textContent||''};
   if(type==='bot_command')return{type,text:text(),bot_command:el.dataset.value||el.textContent||''};
-  if(type==='button')return{type:'button',button:{text:el.textContent||'',style:el.dataset.buttonStyle||'primary',...(el.dataset.buttonAction==='url'?{url:el.dataset.buttonValue||''}:el.dataset.buttonAction==='callback_data'?{callback_data:el.dataset.buttonValue||''}:el.dataset.buttonAction==='copy_text'?{copy_text:{text:el.dataset.buttonValue||''}}:{disabled:{}})}};
+  if(type==='button'){const a=el.dataset.buttonAction||'url',v=el.dataset.buttonValue||'',button={text:el.textContent||'',style:el.dataset.buttonStyle||'primary'};if(a==='url')button.url=v;else if(a==='callback_data')button.callback_data=v;else if(a==='web_app')button.web_app={url:v};else if(a==='login_url')button.login_url={url:v};else if(a==='copy_text')button.copy_text={text:v};else button.disabled={};return{type:'button',button}};
   const tag=el.tagName.toLowerCase(),t=text();
   if(tag==='strong'||tag==='b')return{type:'bold',text:t};
   if(tag==='em'||tag==='i')return{type:'italic',text:t};

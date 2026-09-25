@@ -1,10 +1,14 @@
 import React,{useEffect,useRef,useState}from'react';
-import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,ChevronsDownUp,Redo2,Undo2,Check,SendHorizontal,Trash2,Plus,MinusCircle}from'lucide-react';
+import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,ChevronsDownUp,Redo2,Undo2,Check,SendHorizontal,Trash2,Plus,MinusCircle,Bold,Italic,Underline,Strikethrough,EyeOff,Code,Highlighter,Subscript,Superscript,Link,Mail,Phone,AtSign,Hash,DollarSign,Terminal,Clock3,CreditCard,Smile,SquareFunction,Type}from'lucide-react';
 import{createInitialDocument}from'../document/schema.js';import{changeType,mergePrevious,removeBlock,splitListItem,splitTextBlock,updateListItem,removeListItem,ensureEditableNeighbors,promoteEmptyParagraphToSpacing,updateSpacing}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{telegramHaptic}from'../telegram/webApp.js';
 
-function caret(node){const s=getSelection();if(!s?.rangeCount)return(node.textContent||'').length;const r=s.getRangeAt(0),p=r.cloneRange();p.selectNodeContents(node);p.setEnd(r.startContainer,r.startOffset);return p.toString().length}
+function htmlEscape(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function editorHtml(v){const s=String(v||'');return /<(b|strong|i|em|u|ins|s|strike|del|code|mark|sub|sup|a|span)\b/i.test(s)?s:htmlEscape(s);}
+function plainText(v){return String(v||'').replace(/<[^>]*>/g,'');}
+function selectionOffset(node){const s=getSelection();if(!s?.rangeCount)return plainText(node.innerHTML).length;const r=s.getRangeAt(0),p=r.cloneRange();p.selectNodeContents(node);p.setEnd(r.startContainer,r.startOffset);return p.toString().length}
 function focus(id,offset=0){requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(id)+'"]');if(!node)return;node.focus();const r=document.createRange(),w=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let n,left=offset;r.selectNodeContents(node);r.collapse(true);while((n=w.nextNode())){if(left<=n.length){r.setStart(n,left);r.collapse(true);break}left-=n.length}const s=getSelection();s.removeAllRanges();s.addRange(r)})}
-function Editable({id,text,placeholder,className='',onChange,onKeyDown}){const ref=useRef(null);const last=useRef(text);const empty=!String(text||'').length;React.useEffect(()=>{const node=ref.current;if(!node)return;const next=String(text||'');if(node.textContent!==next){node.textContent=next;last.current=next}},[text]);return <div ref={n=>{ref.current=n;if(n&&n.textContent!==String(text||''))n.textContent=String(text||'')}} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={empty?'true':'false'} onInput={e=>{last.current=e.currentTarget.textContent||'';onChange(last.current)}} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
+function Editable({id,text,placeholder,className='',onChange,onKeyDown}){const ref=useRef(null);React.useEffect(()=>{const node=ref.current;if(!node)return;const next=editorHtml(text);if(node.innerHTML!==next&&node.textContent!==plainText(text))node.innerHTML=next},[text]);return <div ref={n=>{ref.current=n;if(n&&!n.textContent)n.innerHTML=editorHtml(text)} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={plainText(text)?'false':'true'} onInput={e=>onChange(e.currentTarget.innerHTML)} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
+
 
 const menuItems=[
  {type:'paragraph',label:'Paragraph',Icon:Pilcrow},
@@ -14,6 +18,14 @@ const menuItems=[
  {divider:true},
  {type:'list-bullet',label:'Bulleted list',Icon:List},{type:'list-number',label:'Numbered list',Icon:ListOrdered},{type:'list-checklist',label:'Checklist',Icon:ListChecks},{type:'divider',label:'Divider',Icon:Minus}
 ];
+const inlineItems=[
+ {type:'regular',label:'Regular',Icon:Type},{divider:true},
+ {type:'bold',label:'Bold',Icon:Bold},{type:'italic',label:'Italic',Icon:Italic},{type:'underline',label:'Underline',Icon:Underline},{type:'strikethrough',label:'Strikethrough',Icon:Strikethrough},
+ {type:'spoiler',label:'Spoiler',Icon:EyeOff},{type:'code',label:'Inline code',Icon:Code},{type:'marked',label:'Marked',Icon:Highlighter},{type:'subscript',label:'Subscript',Icon:Subscript},{type:'superscript',label:'Superscript',Icon:Superscript},
+ {divider:true},{type:'url',label:'URL',Icon:Link},{type:'email_address',label:'Email',Icon:Mail},{type:'phone_number',label:'Phone',Icon:Phone},{type:'mention',label:'Mention',Icon:AtSign},
+ {type:'hashtag',label:'Hashtag',Icon:Hash},{type:'cashtag',label:'Cashtag',Icon:DollarSign},{type:'bot_command',label:'Bot command',Icon:Terminal},{type:'date_time',label:'Date & time',Icon:Clock3},{type:'bank_card_number',label:'Bank card',Icon:CreditCard},{type:'custom_emoji',label:'Custom emoji',Icon:Smile},{type:'mathematical_expression',label:'Math',Icon:SquareFunction}
+];
+
 
 function unwrapIntersecting(node,range){[...node.querySelectorAll('[data-rich]')].reverse().forEach(el=>{try{if(!range.intersectsNode(el))return;const p=el.parentNode;if(!p)return;while(el.firstChild)p.insertBefore(el.firstChild,el);p.removeChild(el)}catch{}})}
 function wrapSelection(node,tag,attrs={}){const s=getSelection();if(!s?.rangeCount||s.isCollapsed)return false;const r=s.getRangeAt(0).cloneRange(),el=document.createElement(tag);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));try{el.appendChild(r.extractContents());r.insertNode(el);s.removeAllRanges();s.addRange(r);return true}catch{return false}}

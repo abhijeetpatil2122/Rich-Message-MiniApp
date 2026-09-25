@@ -45,6 +45,7 @@ function applyInlineCommand(type){
  const range=saved.range.cloneRange();if(!node.contains(range.commonAncestorContainer)||range.collapsed)return;
  const s=getSelection();s.removeAllRanges();s.addRange(range);
  if(type==='regular'){unwrapIntersecting(node,range);collapseAfter(node);textChange(saved.blockId,node.innerHTML);selectionRef.current=null;setInlineSelection(null);setInlineOpen(false);telegramHaptic('light');return}
+ if(type==='button'){return}
  const tags={bold:['strong',{}],italic:['em',{}],underline:['u',{}],strikethrough:['s',{}],spoiler:['span',{'class':'tg-spoiler','data-rich':'spoiler'}],code:['code',{'data-rich':'code'}],marked:['mark',{'data-rich':'marked'}],subscript:['sub',{'data-rich':'subscript'}],superscript:['sup',{'data-rich':'superscript'}]};
  if(tags[type]){const el=wrapRange(range,tags[type][0],tags[type][1]);collapseAfter(el);textChange(saved.blockId,node.innerHTML);selectionRef.current=null;setInlineSelection(null);setInlineOpen(false);telegramHaptic('light');return}
  if(['url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','date_time'].includes(type)){

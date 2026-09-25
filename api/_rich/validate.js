@@ -1,2 +1,40 @@
-const RICH=new Set(['bold','italic','underline','strikethrough','spoiler','code','marked','subscript','superscript','url']);
-export function validateDocument(d){if(!d||d.version!==1||!Array.isArray(d.blocks)||d.blocks.length>500)throw new Error('Invalid Rich Message document.');const rt=(v,n=20)=>{if(typeof v==='string')return v;if(n<1)throw new Error('Rich text is nested too deeply.');if(Array.isArray(v))return v.map(x=>rt(x,n-1));if(!v||typeof v!=='object'||!RICH.has(v.type))throw new Error('Unsupported inline format.');const text=rt(v.text,n-1);if(v.type==='url'){if(typeof v.url!=='string'||!/^(https?:\/\/|tg:\/\/)/i.test(v.url))throw new Error('Links must use http(s) or tg:// URLs.');return{type:'url',text,url:v.url}}return{type:v.type,text}};const out=d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').trim())).flatMap(b=>{if(b.type==='divider')return{type:'divider'};if(b.type==='spacing'){if(!Number.isInteger(b.lines)||b.lines<1||b.lines>8)throw new Error('Invalid spacing.');return Array.from({length:b.lines},()=>({type:'paragraph',text:''}));}if(b.type==='heading'){if(!Number.isInteger(b.size)||b.size<1||b.size>6)throw new Error('Invalid heading size.');return{type:'heading',text:rt(b.text||''),size:b.size}}if(b.type==='pre')return{type:'pre',text:String(b.text||''),...(b.language?{language:String(b.language)}:{})};if(b.type==='paragraph'||b.type==='footer')return{type:b.type,text:rt(b.text||'')};if(b.type==='list'){if(!Array.isArray(b.items)||!b.items.length)throw new Error('Invalid list.');return{type:'list',items:b.items.map((i,n)=>{const o={blocks:[{type:'paragraph',text:rt(i.text||'')}]};if(b.style==='number'){o.type='1';o.value=n+1}if(b.style==='checklist'){o.has_checkbox=true;o.is_checked=!!i.checked}return o})}}if(b.type==='blockquote')return{type:'blockquote',blocks:String(b.text||'').split('\n').map(line=>({type:'paragraph',text:rt(line)})),...(b.credit?{credit:rt(b.credit)}:{})};if(b.type==='expandable_blockquote')return{type:'expandable_blockquote',text:rt(b.text||''),...(b.credit?{credit:rt(b.credit)}:{})};if(b.type==='pullquote')return{type:'pullquote',text:rt(b.text||''),...(b.credit?{credit:rt(b.credit)}:{})};throw new Error('Unsupported block type: '+b.type)});const chars=JSON.stringify(out).length;if(chars>32768*4)throw new Error('Rich Message is too large.');return out}
+const RICH_TEXT=new Set(['bold','italic','underline','strikethrough','spoiler','date_time','text_mention','subscript','superscript','marked','code','custom_emoji','mathematical_expression','url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','button','anchor','anchor_link','reference','reference_link']);
+const WRAPPED=new Set(['bold','italic','underline','strikethrough','spoiler','date_time','text_mention','subscript','superscript','marked','code','url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','button','anchor_link','reference','reference_link']);
+export function validateDocument(d){
+ if(!d||d.version!==1||!Array.isArray(d.blocks)||d.blocks.length>500)throw new Error('Invalid Rich Message document.');
+ const rt=(v,n=16)=>{
+  if(typeof v==='string')return v;
+  if(n<1)throw new Error('Rich text is nested too deeply.');
+  if(Array.isArray(v))return v.flatMap(x=>{const r=rt(x,n-1);return Array.isArray(r)?r:[r];});
+  if(!v||typeof v!=='object'||!RICH_TEXT.has(v.type))throw new Error('Unsupported inline format.');
+  const type=v.type;
+  if(WRAPPED.has(type)){
+   if(!('text'in v))throw new Error('Rich text is missing text.');
+   const out={type,text:rt(v.text,n-1)};
+   if(type==='date_time'){if(!Number.isInteger(v.unix_time))throw new Error('Invalid date-time Unix time.');if(v.date_time_format!==undefined&&!/^r|w?[dD]?[tT]?$/.test(v.date_time_format))throw new Error('Invalid date-time format.');out.unix_time=v.unix_time;if(v.date_time_format)out.date_time_format=v.date_time_format;}
+   if(type==='url'){if(typeof v.url!=='string'||!/^(https?:\\/\\/|tg:\\/\\/)/i.test(v.url))throw new Error('Links must use http(s) or tg:// URLs.');out.url=v.url;}
+   if(type==='email_address')out.email_address=String(v.email_address||'');
+   if(type==='phone_number')out.phone_number=String(v.phone_number||'');
+   if(type==='bank_card_number')out.bank_card_number=String(v.bank_card_number||'');
+   if(type==='text_mention'){if(!v.user||typeof v.user!=='object'||!Number.isInteger(v.user.id))throw new Error('Text mentions require a user id.');out.user=v.user;}
+   return out;
+  }
+  if(type==='custom_emoji'){if(!String(v.custom_emoji_id||'')||!String(v.alternative_text||''))throw new Error('Custom emoji requires an id and alternative text.');return{type,custom_emoji_id:String(v.custom_emoji_id),alternative_text:String(v.alternative_text)};}
+  if(type==='mathematical_expression'){return{type,expression:String(v.expression||'')};}
+  return{type,...(v.name?{name:String(v.name)}:{}),...(v.url?{url:String(v.url)}:{})};
+ };
+ const out=d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').replace(/<[^>]*>/g,'').trim())).flatMap(b=>{
+  if(b.type==='divider')return{type:'divider'};
+  if(b.type==='spacing'){if(!Number.isInteger(b.lines)||b.lines<1||b.lines>8)throw new Error('Invalid spacing.');return Array.from({length:b.lines},()=>({type:'paragraph',text:''}));}
+  if(b.type==='heading'){if(!Number.isInteger(b.size)||b.size<1||b.size>6)throw new Error('Invalid heading size.');return{type:'heading',text:rt(b.text||''),size:b.size};}
+  if(b.type==='pre')return{type:'pre',text:rt(b.text||''),...(b.language?{language:String(b.language)}:{})};
+  if(b.type==='paragraph'||b.type==='footer')return{type:b.type,text:rt(b.text||'')};
+  if(b.type==='list'){if(!Array.isArray(b.items)||!b.items.length)throw new Error('Invalid list.');return{type:'list',items:b.items.map((i,n)=>{const o={blocks:[{type:'paragraph',text:rt(i.text||'')}]};if(b.style==='number'){o.type='1';o.value=n+1;}if(b.style==='checklist'){o.has_checkbox=true;o.is_checked=!!i.checked;}return o;})};}
+  if(b.type==='blockquote')return{type:'blockquote',blocks:String(b.text||'').split('\\n').map(line=>({type:'paragraph',text:rt(line)})),...(b.credit?{credit:rt(b.credit)}:{})};
+  if(b.type==='expandable_blockquote')return{type:'expandable_blockquote',text:rt(b.text||''),...(b.credit?{credit:rt(b.credit)}:{})};
+  if(b.type==='pullquote')return{type:'pullquote',text:rt(b.text||''),...(b.credit?{credit:rt(b.credit)}:{})};
+  throw new Error('Unsupported block type: '+b.type);
+ });
+ if(JSON.stringify(out).length>131072)throw new Error('Rich Message is too large.');
+ return out;
+}

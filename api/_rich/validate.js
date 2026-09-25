@@ -21,16 +21,18 @@ export function validateDocument(d){
   }
   if(type==='button'){
    if(!v.button||typeof v.button!=='object')throw new Error('Rich buttons require a button configuration.');
-   const b=v.button,outButton={text:rt(v.button.text||''),...(v.button.style?{style:String(v.button.style)}:{})};
-   if(!['danger','success','primary','link'].includes(outButton.style||'primary'))throw new Error('Invalid Rich button style.');
-   const actions=['url','callback_data','copy_text','disabled'].filter(k=>v.button[k]!==undefined);
+   const b=v.button,style=String(b.style||'primary'),outButton={text:rt(b.text||''),style};
+   if(!['danger','success','primary','link'].includes(style))throw new Error('Invalid Rich button style.');
+   const actions=['url','callback_data','web_app','login_url','copy_text','disabled'].filter(k=>b[k]!==undefined);
    if(actions.length!==1)throw new Error('Rich button must have exactly one action.');
    const action=actions[0];
-   if(action==='url'){if(typeof b.url!=='string'||!/^(https?:\\/\\/|tg:\\/\\/)/i.test(b.url))throw new Error('Rich button URL must use http(s) or tg://.');outButton.url=b.url;}
-   if(action==='callback_data'){if(typeof b.callback_data!=='string'||b.callback_data.length>64)throw new Error('Callback data must be 1-64 characters.');outButton.callback_data=b.callback_data;}
-   if(action==='copy_text'){if(!b.copy_text||typeof b.copy_text.text!=='string')throw new Error('Copy buttons require copy text.');outButton.copy_text={text:b.copy_text.text};}
+   if(style==='link'&&action!=='callback_data')throw new Error('The link style is allowed only for callback buttons.');
+   if(action==='url'){if(typeof b.url!=='string'||!b.url)throw new Error('Rich button URL is required.');outButton.url=b.url}
+   if(action==='callback_data'){if(typeof b.callback_data!=='string'||!b.callback_data)throw new Error('Callback data is required.');if(new TextEncoder().encode(b.callback_data).length>64)throw new Error('Callback data must be 1-64 bytes.');outButton.callback_data=b.callback_data}
+   if(action==='web_app'){if(!b.web_app||typeof b.web_app.url!=='string'||!b.web_app.url)throw new Error('Web App URL is required.');outButton.web_app={url:b.web_app.url}}
+   if(action==='login_url'){if(!b.login_url||typeof b.login_url.url!=='string'||!b.login_url.url)throw new Error('Login URL is required.');outButton.login_url={url:b.login_url.url}}
+   if(action==='copy_text'){if(!b.copy_text||typeof b.copy_text.text!=='string')throw new Error('Copy text is required.');outButton.copy_text={text:b.copy_text.text}}
    if(action==='disabled')outButton.disabled={};
-   if(outButton.style==='link'&&action!=='callback_data')throw new Error('The link style is only valid for callback buttons.');
    return{type,button:outButton};
   }
   if(type==='custom_emoji'){if(!String(v.custom_emoji_id||'')||!String(v.alternative_text||''))throw new Error('Custom emoji requires an id and alternative text.');return{type,custom_emoji_id:String(v.custom_emoji_id),alternative_text:String(v.alternative_text)};}

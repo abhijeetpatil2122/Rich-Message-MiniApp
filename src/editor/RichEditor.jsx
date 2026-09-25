@@ -23,7 +23,7 @@ const inlineItems=[
  {type:'bold',label:'Bold',Icon:Bold},{type:'italic',label:'Italic',Icon:Italic},{type:'underline',label:'Underline',Icon:Underline},{type:'strikethrough',label:'Strikethrough',Icon:Strikethrough},
  {type:'spoiler',label:'Spoiler',Icon:EyeOff},{type:'code',label:'Inline code',Icon:Code},{type:'marked',label:'Marked',Icon:Highlighter},{type:'subscript',label:'Subscript',Icon:Subscript},{type:'superscript',label:'Superscript',Icon:Superscript},
  {divider:true},{type:'url',label:'URL',Icon:Link},{type:'email_address',label:'Email',Icon:Mail},{type:'phone_number',label:'Phone',Icon:Phone},{type:'mention',label:'Mention',Icon:AtSign},
- {type:'hashtag',label:'Hashtag',Icon:Hash},{type:'cashtag',label:'Cashtag',Icon:DollarSign},{type:'bot_command',label:'Bot command',Icon:Terminal},{type:'date_time',label:'Date & time',Icon:Clock3},{type:'bank_card_number',label:'Bank card',Icon:CreditCard},{type:'custom_emoji',label:'Custom emoji',Icon:Smile}
+ {type:'hashtag',label:'Hashtag',Icon:Hash},{type:'cashtag',label:'Cashtag',Icon:DollarSign},{type:'bot_command',label:'Bot command',Icon:Terminal},{type:'date_time',label:'Date & time',Icon:Clock3},{type:'bank_card_number',label:'Bank card',Icon:CreditCard},{type:'custom_emoji',label:'Custom emoji',Icon:Smile},{divider:true},{type:'button',label:'Rich button',Icon:Plus}
 ];
 
 

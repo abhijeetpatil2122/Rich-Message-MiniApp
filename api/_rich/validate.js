@@ -12,7 +12,7 @@ export function validateDocument(d){
    if(!('text'in v))throw new Error('Rich text is missing text.');
    const out={type,text:rt(v.text,n-1)};
    if(type==='date_time'){if(!Number.isInteger(v.unix_time))throw new Error('Invalid date-time Unix time.');if(v.date_time_format!==undefined&&!/^r|w?[dD]?[tT]?$/.test(v.date_time_format))throw new Error('Invalid date-time format.');out.unix_time=v.unix_time;if(v.date_time_format)out.date_time_format=v.date_time_format;}
-   if(type==='url'){if(typeof v.url!=='string'||!/^(https?:\\/\\/|tg:\\/\\/)/i.test(v.url))throw new Error('Links must use http(s) or tg:// URLs.');out.url=v.url;}
+   if(type==='url'){if(typeof v.url!=='string'||!/^(https?:\/\/|tg:\/\/)/i.test(v.url))throw new Error('Links must use http(s) or tg:// URLs.');out.url=v.url;}
    if(type==='email_address')out.email_address=String(v.email_address||'');
    if(type==='phone_number')out.phone_number=String(v.phone_number||'');
    if(type==='bank_card_number')out.bank_card_number=String(v.bank_card_number||'');

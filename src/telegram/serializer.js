@@ -34,4 +34,4 @@ case'blockquote':return{type:'blockquote',blocks:String(b.text||'').split('\\n')
 case'expandable_blockquote':return{type:'expandable_blockquote',text:rich(b.text),...(b.credit?{credit:rich(b.credit)}:{})};
 case'pullquote':return{type:'pullquote',text:rich(b.text),...(b.credit?{credit:rich(b.credit)}:{})};
 default:throw new Error('Unsupported block type: '+b.type);}}
-export function serializeDocument(d){return d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').replace(/<[^>]*>/g,'').trim())).flatMap(serializeBlock).filter(b=>b.type==='divider'||b.type==='paragraph'||b.text||b.items?.length);}
+export function serializeDocument(d){return{version:1,blocks:d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').replace(/<[^>]*>/g,'').trim())).flatMap(serializeBlock).filter(b=>b.type==='divider'||b.type==='paragraph'||b.text||b.items?.length)}}

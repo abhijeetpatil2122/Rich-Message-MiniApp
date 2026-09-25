@@ -19,9 +19,22 @@ export function validateDocument(d){
    if(type==='text_mention'){if(!v.user||typeof v.user!=='object'||!Number.isInteger(v.user.id))throw new Error('Text mentions require a user id.');out.user=v.user;}
    return out;
   }
+  if(type==='button'){
+   if(!v.button||typeof v.button!=='object')throw new Error('Rich buttons require a button configuration.');
+   const b=v.button,outButton={text:rt(v.button.text||''),...(v.button.style?{style:String(v.button.style)}:{})};
+   if(!['danger','success','primary','link'].includes(outButton.style||'primary'))throw new Error('Invalid Rich button style.');
+   const actions=['url','callback_data','copy_text','disabled'].filter(k=>v.button[k]!==undefined);
+   if(actions.length!==1)throw new Error('Rich button must have exactly one action.');
+   const action=actions[0];
+   if(action==='url'){if(typeof b.url!=='string'||!/^(https?:\\/\\/|tg:\\/\\/)/i.test(b.url))throw new Error('Rich button URL must use http(s) or tg://.');outButton.url=b.url;}
+   if(action==='callback_data'){if(typeof b.callback_data!=='string'||b.callback_data.length>64)throw new Error('Callback data must be 1-64 characters.');outButton.callback_data=b.callback_data;}
+   if(action==='copy_text'){if(!b.copy_text||typeof b.copy_text.text!=='string')throw new Error('Copy buttons require copy text.');outButton.copy_text={text:b.copy_text.text};}
+   if(action==='disabled')outButton.disabled={};
+   if(outButton.style==='link'&&action!=='callback_data')throw new Error('The link style is only valid for callback buttons.');
+   return{type,button:outButton};
+  }
   if(type==='custom_emoji'){if(!String(v.custom_emoji_id||'')||!String(v.alternative_text||''))throw new Error('Custom emoji requires an id and alternative text.');return{type,custom_emoji_id:String(v.custom_emoji_id),alternative_text:String(v.alternative_text)};}
-  if(type==='mathematical_expression'){return{type,expression:String(v.expression||'')};}
-  return{type,...(v.name?{name:String(v.name)}:{}),...(v.url?{url:String(v.url)}:{})};
+  return{type,...(v.name?{name:String(v.name)}:{}),...(v.url?{url:String(v.url)}:{}),...(v.username?{username:String(v.username)}:{}),...(v.hashtag?{hashtag:String(v.hashtag)}:{}),...(v.cashtag?{cashtag:String(v.cashtag)}:{}),...(v.bot_command?{bot_command:String(v.bot_command)}:{})};
  };
  const out=d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').replace(/<[^>]*>/g,'').trim())).flatMap(b=>{
   if(b.type==='divider')return{type:'divider'};

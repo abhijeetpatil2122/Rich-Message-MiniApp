@@ -1,5 +1,5 @@
-const RICH_TEXT=new Set(['bold','italic','underline','strikethrough','spoiler','date_time','text_mention','subscript','superscript','marked','code','custom_emoji','mathematical_expression','url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','button','anchor','anchor_link','reference','reference_link']);
-const WRAPPED=new Set(['bold','italic','underline','strikethrough','spoiler','date_time','text_mention','subscript','superscript','marked','code','url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','button','anchor_link','reference','reference_link']);
+const RICH_TEXT=new Set(['bold','italic','underline','strikethrough','spoiler','date_time','text_mention','subscript','superscript','marked','code','custom_emoji','mathematical_expression','url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','anchor','anchor_link','reference','reference_link']);
+const WRAPPED=new Set(['bold','italic','underline','strikethrough','spoiler','date_time','text_mention','subscript','superscript','marked','code','url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','anchor_link','reference','reference_link']);
 export function validateDocument(d){
  if(!d||d.version!==1||!Array.isArray(d.blocks)||d.blocks.length>500)throw new Error('Invalid Rich Message document.');
  const rt=(v,n=16)=>{

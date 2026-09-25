@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createBlock, createInitialDocument, createListItem, createRun, mergeRuns, runsText, sliceRuns, toTelegramRichMessage } from './lib/document.js';
 
 const tg = () => window.Telegram?.WebApp;
@@ -70,18 +70,12 @@ const runsToHTML = runs => (runs || []).map(runToHTML).join('');
 // Reconstructs runs by walking the contentEditable's actual DOM after a
 // native edit (typing, browser-native formatting, etc.). Any element we
 // don't recognize is walked through with no formatting added, which
-// doubles as a cheap safety net against unexpected pasted markup. A <br>,
-// or a nested <div>/<p> (what Chrome/WebView insert natively for Enter
-// inside a contentEditable when our own interception doesn't catch it in
-// time), is surfaced as a literal '\n' — the caller then converts that
-// into a real block split, the same way a multi-line paste is handled.
+// doubles as a cheap safety net against unexpected pasted markup.
 function domToRuns(node) {
   const runs = [];
-  const BLOCK_TAGS = new Set(['DIV', 'P']);
   const walk = (n, marks, link) => {
     if (n.nodeType === 3) { if (n.data) runs.push(createRun(n.data, marks, link)); return; }
     if (n.nodeType !== 1) return;
-    if (n.tagName === 'BR') { runs.push(createRun('\n', [], null)); return; }
     const tag = n.tagName.toLowerCase();
     let nextMarks = marks; let nextLink = link;
     if (tag === 'b' || tag === 'strong') nextMarks = [...marks, 'bold'];
@@ -97,11 +91,7 @@ function domToRuns(node) {
     nextMarks = [...new Set(nextMarks)];
     for (const child of Array.from(n.childNodes)) walk(child, nextMarks, nextLink);
   };
-  const children = Array.from(node.childNodes);
-  children.forEach((child, index) => {
-    if (index > 0 && child.nodeType === 1 && BLOCK_TAGS.has(child.tagName)) runs.push(createRun('\n', [], null));
-    walk(child, [], null);
-  });
+  for (const child of Array.from(node.childNodes)) walk(child, [], null);
   return mergeRuns(runs);
 }
 
@@ -171,10 +161,6 @@ export default function App() {
   const lastRenderedRuns = useRef(new Map());
   const pendingFocus = useRef(null);
   const pendingAfterFocus = useRef(null);
-  // Enter is delivered by Android as keydown and/or beforeinput depending on
-  // the keyboard/WebView. Keep a short-lived fallback token so we never
-  // process the same Enter twice.
-  const pendingEnterFallback = useRef(null);
   const history = useRef({ past: [], future: [], lastInputAt: 0 });
   const notificationTimers = useRef(new Map());
 
@@ -201,7 +187,7 @@ export default function App() {
   // splits, merges, undo/redo, paste) don't pre-populate the cache, so they
   // correctly trigger a real re-render, then restore the caret/selection
   // via pendingFocus.
-  useLayoutEffect(() => {
+  useEffect(() => {
     for (const block of document.blocks) {
       if (!canHoldRuns(block)) continue;
       const node = editorRefs.current.get(block.id);
@@ -269,8 +255,8 @@ export default function App() {
     return focusNode(editorRefs.current.get(id), start, end);
   };
 
-  useLayoutEffect(() => {
-    if (pendingFocus.current) { const { id, start, end } = pendingFocus.current; pendingFocus.current = null; focusBlock(id, start, end); }
+  useEffect(() => {
+    if (pendingFocus.current) { const { id, start, end } = pendingFocus.current; pendingFocus.current = null; requestAnimationFrame(() => focusBlock(id, start, end)); }
     if (pendingAfterFocus.current) {
       const { anchorId, start, end } = pendingAfterFocus.current; pendingAfterFocus.current = null;
       const anchorIndex = document.blocks.findIndex(item => item.id === anchorId);
@@ -475,40 +461,23 @@ export default function App() {
     setActiveId(paragraph.id); pendingFocus.current = { id: paragraph.id, start: 0, end: 0 };
   };
 
-  const performListEnter = (block, item, itemIndex, input) => {
-    if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
-    const start = input.selectionStart ?? item.text.length;
-    const end = input.selectionEnd ?? item.text.length;
-    splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
-  };
-
-  // Android keyboards can expose Enter through beforeinput instead of
-  // keydown. Handle the edit before the browser gets a chance to create
-  // any native editing markup. If beforeinput is non-cancelable, the
-  // keydown fallback/onInput recovery below takes over instead.
+  // Enter is handled here, not in onKeyDown: many Android soft keyboards
+  // (IME composition) don't reliably fire a keydown with key 'Enter' at
+  // all, but the standards-based beforeinput event with inputType
+  // 'insertParagraph'/'insertLineBreak' fires consistently everywhere,
+  // including through IME composition. This is what was actually breaking
+  // "Enter adds a new list item".
   const handleListItemBeforeInput = (event, block, item, itemIndex) => {
     const inputType = event.nativeEvent?.inputType;
     if (inputType !== 'insertParagraph' && inputType !== 'insertLineBreak') return;
-    if (!event.cancelable) return;
     event.preventDefault();
-    pendingEnterFallback.current = null;
-    performListEnter(block, item, itemIndex, event.currentTarget);
+    if (item.text.trim() === '' && itemIndex === block.items.length - 1) { exitList(block.id); return; }
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? item.text.length; const end = input.selectionEnd ?? item.text.length;
+    splitListItem(block.id, item.id, item.text.slice(0, start), item.text.slice(end));
   };
 
-  const handleListItemKeyDown = (event, block, item, itemIndex) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const input = event.currentTarget;
-      const token = { target: input, itemId: item.id };
-      pendingEnterFallback.current = token;
-      // Give beforeinput a chance to handle the same Enter first.
-      setTimeout(() => {
-        if (pendingEnterFallback.current !== token) return;
-        pendingEnterFallback.current = null;
-        performListEnter(block, item, itemIndex, input);
-      }, 0);
-      return;
-    }
+  const handleListItemKeyDown = (event, block, item) => {
     if (event.key === 'Backspace') {
       const input = event.currentTarget;
       const atStart = (input.selectionStart ?? 0) === 0 && (input.selectionEnd ?? 0) === 0;
@@ -564,15 +533,12 @@ export default function App() {
     setActiveId(tail.id); pendingFocus.current = { id: tail.id, start: lastLine.length, end: lastLine.length };
   };
 
-  // Prefer beforeinput for Enter because it fires before contentEditable
-  // mutates the DOM. This prevents Android/WebView from leaving behind
-  // <div><br></div> fragments that later get mistaken for user text.
+  // Same beforeinput-based approach as list items, for the same reason:
+  // Android IME keyboards don't reliably fire a keydown for Enter.
   const handleBeforeInput = (event, block) => {
     const inputType = event.nativeEvent?.inputType;
     if (inputType !== 'insertParagraph' && inputType !== 'insertLineBreak') return;
-    if (!event.cancelable) return;
     event.preventDefault();
-    pendingEnterFallback.current = null;
     const node = event.currentTarget;
     const fullText = runsText(block.runs);
     const offsets = getCaretOffsets(node);
@@ -581,38 +547,8 @@ export default function App() {
     splitBlock(block.id, sliceRuns(block.runs, 0, start), sliceRuns(block.runs, end, fullText.length));
   };
 
-  // Fallback for keyboards/WebViews that expose Enter as keydown only.
-  // The zero-delay task lets a same-gesture beforeinput event win first.
-  const resolveNewlineSplit = (blockId, rawRuns) => {
-    const text = runsText(rawRuns);
-    const newlineIndex = text.indexOf('\n');
-    if (newlineIndex < 0) return false;
-    pendingEnterFallback.current = null;
-    splitBlock(blockId, sliceRuns(rawRuns, 0, newlineIndex), sliceRuns(rawRuns, newlineIndex + 1, text.length));
-    return true;
-  };
-
   const handleKeyDown = (event, block) => {
     if (block.type === 'pre') { if (event.key === 'Backspace' && block.text === '') { event.preventDefault(); removeBlock(block.id); } return; }
-
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const node = event.currentTarget;
-      const token = { target: node, blockId: block.id };
-      pendingEnterFallback.current = token;
-      setTimeout(() => {
-        if (pendingEnterFallback.current !== token) return;
-        pendingEnterFallback.current = null;
-        const currentBlock = document.blocks.find(b => b.id === block.id);
-        if (!currentBlock) return;
-        const fullText = runsText(currentBlock.runs);
-        const offsets = getCaretOffsets(node);
-        const start = offsets ? offsets.start : fullText.length;
-        const end = offsets ? offsets.end : fullText.length;
-        splitBlock(currentBlock.id, sliceRuns(currentBlock.runs, 0, start), sliceRuns(currentBlock.runs, end, fullText.length));
-      }, 0);
-      return;
-    }
 
     if (event.key === 'Backspace') {
       if (runsText(block.runs) === '') { event.preventDefault(); removeBlock(block.id); return; }
@@ -768,7 +704,7 @@ export default function App() {
                   {block.style === 'checklist'
                     ? <button type="button" className={`list-checkbox ${item.checked ? 'checked' : ''}`} aria-label={item.checked ? 'Mark as not done' : 'Mark as done'} onClick={() => toggleListItemChecked(block.id, item.id)}>{item.checked && <Icon name="check" size={13}/>}</button>
                     : <span className="list-marker">{block.style === 'number' ? `${itemIndex + 1}.` : '•'}</span>}
-                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" enterKeyHint="enter" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onBeforeInput={event => handleListItemBeforeInput(event, block, item, itemIndex)} onKeyDown={event => handleListItemKeyDown(event, block, item, itemIndex)}/>
+                  <input ref={node => { if (node) editorRefs.current.set(item.id, node); else editorRefs.current.delete(item.id); }} type="text" className={`list-item-input ${item.checked ? 'checked' : ''}`} value={item.text} placeholder={block.items.length === 1 ? 'List item' : ''} onFocus={() => setActiveId(block.id)} onChange={event => updateListItemText(block.id, item.id, event.currentTarget.value)} onBeforeInput={event => handleListItemBeforeInput(event, block, item, itemIndex)} onKeyDown={event => handleListItemKeyDown(event, block, item)}/>
                 </div>)}
               </div>
             </> : <>
@@ -786,7 +722,6 @@ export default function App() {
                     onFocus={() => setActiveId(block.id)} onClick={event => event.stopPropagation()}
                     onInput={event => {
                       const rawRuns = domToRuns(event.currentTarget);
-                      if (resolveNewlineSplit(block.id, rawRuns)) return;
                       const { runs, corrected, caretOffset } = resolveTypedRuns(block.runs, rawRuns);
                       if (corrected) pendingFocus.current = { id: block.id, start: caretOffset, end: caretOffset };
                       else lastRenderedRuns.current.set(block.id, runs);
@@ -794,7 +729,6 @@ export default function App() {
                     }}
                     onPaste={event => { event.preventDefault(); const text = (event.clipboardData || window.clipboardData)?.getData('text/plain') || ''; if (text) insertPlainText(block.id, text); }}
                     onBeforeInput={event => handleBeforeInput(event, block)}
-                    enterKeyHint="enter"
                     onKeyDown={event => handleKeyDown(event, block)}/>}
               {(block.type === 'blockquote' || block.type === 'pullquote') && (block.credit !== null
                 ? <div className="quote-credit-row" onClick={event => event.stopPropagation()}>

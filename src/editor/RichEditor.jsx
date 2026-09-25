@@ -56,6 +56,15 @@ function applyInlineCommand(type){
  }
 }
 
+function applyRichConfig(){
+ const cfg=richConfig;if(!cfg)return;
+ const node=document.querySelector('[data-editor-id="'+CSS.escape(cfg.blockId)+'"]');if(!node)return;
+ const range=cfg.range.cloneRange();if(!node.contains(range.commonAncestorContainer)||range.collapsed)return;
+ const label=range.toString();if(!label.trim())return;
+ const span=document.createElement('span');span.dataset.rich='button';span.setAttribute('data-button-style',cfg.style);span.setAttribute('data-button-action',cfg.action);span.setAttribute('data-button-value',cfg.value||'');span.className='rich-inline-button rich-inline-button-'+cfg.style;span.textContent=label;
+ range.deleteContents();range.insertNode(span);collapseAfter(span);textChange(cfg.blockId,node.innerHTML);selectionRef.current=null;setInlineSelection(null);setRichConfig(null);telegramHaptic('light');
+}
+
 function key(block,e,node){const off=selectionOffset(node);setActive(block.id);if(e.key==='Enter'){if(block.type==='blockquote'||block.type==='expandable_blockquote'||block.type==='pullquote')return;e.preventDefault();if(block.type==='paragraph'&&!String(block.text||'').trim()){const r=promoteEmptyParagraphToSpacing(doc,block.id);if(r.nextId){commit(r.doc,{id:r.nextId});setActive(r.nextId);telegramHaptic('light')}return}const r=splitEditorBlock(doc,block,node)||splitTextBlock(doc,block.id,off);if(r.nextId)commit(r.doc,{id:r.nextId});return}if(e.key==='Backspace'&&off===0){e.preventDefault();if(block.structural){const i=doc.blocks.findIndex(x=>x.id===block.id),prev=doc.blocks[i-1];if(prev?.intentionalEmpty){commit(removeBlock(doc,prev.id),{id:block.id});telegramHaptic('light');return}}const r=mergePrevious(doc,block.id);if(r.doc!==doc)commit(r.doc,{id:r.focusId,offset:r.offset})}}
 function listKey(block,item,index,e,node){const off=caret(node);if(e.key==='Enter'){e.preventDefault();if(!item.text&&index===block.items.length-1){commit(removeBlock(doc,block.id));return}const r=splitListItem(doc,block.id,item.id,off);commit(r.doc,{id:r.nextItemId})}else if(e.key==='Backspace'&&off===0&&!item.text&&block.items.length>1){e.preventDefault();commit(removeListItem(doc,block.id,item.id))}}
 function deleteBlock(id){const index=doc.blocks.findIndex(b=>b.id===id);if(index<0)return;const next=removeBlock(doc,id);const target=next.blocks[index]||next.blocks[index-1]||next.blocks[0];commit(next);setActive(target?.id||null);telegramHaptic('light')}

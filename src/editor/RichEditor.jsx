@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState}from'react';
-import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,ChevronsDownUp,Redo2,Undo2,Check,SendHorizontal,Trash2,Plus,MinusCircle,Bold,Italic,Underline,Strikethrough,EyeOff,Code,Highlighter,Subscript,Superscript,Link,Mail,Phone,AtSign,Hash,DollarSign,Terminal,Clock3,CreditCard,Smile,Type}from'lucide-react';
+import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,ChevronsDownUp,Redo2,Undo2,Check,SendHorizontal,Trash2,Plus,MinusCircle,Bold,Italic,Underline,Strikethrough,EyeOff,Code,Highlighter,Subscript,Superscript,Link,Mail,Phone,AtSign,Hash,DollarSign,Terminal,Clock3,CreditCard,Type}from'lucide-react';
 import{createInitialDocument}from'../document/schema.js';import{changeType,mergePrevious,removeBlock,splitListItem,splitTextBlock,updateListItem,removeListItem,ensureEditableNeighbors,promoteEmptyParagraphToSpacing,updateSpacing}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{telegramHaptic}from'../telegram/webApp.js';
 
 function htmlEscape(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -23,7 +23,7 @@ const inlineItems=[
  {type:'bold',label:'Bold',Icon:Bold},{type:'italic',label:'Italic',Icon:Italic},{type:'underline',label:'Underline',Icon:Underline},{type:'strikethrough',label:'Strikethrough',Icon:Strikethrough},
  {type:'spoiler',label:'Spoiler',Icon:EyeOff},{type:'code',label:'Inline code',Icon:Code},{type:'marked',label:'Marked',Icon:Highlighter},{type:'subscript',label:'Subscript',Icon:Subscript},{type:'superscript',label:'Superscript',Icon:Superscript},
  {divider:true},{type:'url',label:'URL',Icon:Link},{type:'email_address',label:'Email',Icon:Mail},{type:'phone_number',label:'Phone',Icon:Phone},{type:'mention',label:'Mention',Icon:AtSign},
- {type:'hashtag',label:'Hashtag',Icon:Hash},{type:'cashtag',label:'Cashtag',Icon:DollarSign},{type:'bot_command',label:'Bot command',Icon:Terminal},{type:'date_time',label:'Date & time',Icon:Clock3},{type:'bank_card_number',label:'Bank card',Icon:CreditCard},{type:'custom_emoji',label:'Custom emoji',Icon:Smile},{divider:true},{type:'button',label:'Rich button',Icon:Plus}
+ {type:'hashtag',label:'Hashtag',Icon:Hash},{type:'cashtag',label:'Cashtag',Icon:DollarSign},{type:'bot_command',label:'Bot command',Icon:Terminal},{type:'date_time',label:'Date & time',Icon:Clock3},{type:'bank_card_number',label:'Bank card',Icon:CreditCard},{divider:true},{type:'button',label:'Rich button',Icon:Plus}
 ];
 
 

@@ -11,3 +11,6 @@ Architecture:
 - mobile-first Telegram-native UI
 
 The implementation is checked against the current official Telegram Bot API Rich Message and Mini Apps documentation as those APIs evolve.
+
+
+<!-- rebuild deployment sync: 2026-09-25 -->

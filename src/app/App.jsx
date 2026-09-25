@@ -1,7 +1,7 @@
 import React,{useEffect,useState}from'react';
 import RichEditor from'../editor/RichEditor.jsx';import ProfilePage from'../profile/ProfilePage.jsx';
 import {configureTelegramNavigation,getTelegramUser,initTelegramWebApp,setTelegramNavigation,telegramHaptic,telegramImpact,telegramPopup}from'../telegram/webApp.js';
-import{loadChannels}from'../channels/channelStorage.js';import{postTelegram}from'../telegram/api.js';import{Check,SendHorizontal,UserRound,X}from'lucide-react';
+import{loadChannels}from'../channels/channelStorage.js';import{serializeDocument}from'../telegram/serializer.js';import{postTelegram}from'../telegram/api.js';import{Check,SendHorizontal,UserRound,X}from'lucide-react';
 
 function Avatar({user}){const[fallback,setFallback]=useState(false);return user?.photo_url&&!fallback?<img src={user.photo_url} className="user-avatar" alt="" onError={()=>setFallback(true)}/>:<span className="user-avatar fallback"><UserRound size={19}/></span>;}
 
@@ -13,7 +13,7 @@ function SendSheet({document,onClose,onSuccess,user}){
   async function send(target){
     if(busy)return;
     setBusy(true);telegramImpact('light');
-    try{await postTelegram('sendRichMessage',{document,target});const channel=target.type==='channel'?channels.find(c=>String(c.id)===String(target.chat_id)):null;setSuccessText(target.type==='channel'?`Message sent to ${channel?.title||channel?.username||target.chat_id}`:'Message sent to your private chat');telegramHaptic('success');close()}
+    try{await postTelegram('sendRichMessage',{document:serializeDocument(document),target});const channel=target.type==='channel'?channels.find(c=>String(c.id)===String(target.chat_id)):null;setSuccessText(target.type==='channel'?`Message sent to ${channel?.title||channel?.username||target.chat_id}`:'Message sent to your private chat');telegramHaptic('success');close()}
     catch(e){telegramHaptic('error');await telegramPopup({title:'Could not send',message:e?.message||'The message could not be sent.',buttons:[{id:'close',type:'close'}]})}
     finally{setBusy(false)}
   }

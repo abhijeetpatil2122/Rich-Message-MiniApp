@@ -6,10 +6,13 @@ function richFromNode(node){
   const el=node,type=el.dataset?.rich,text=()=>children(el);
   if(type==='spoiler'||type==='marked'||type==='subscript'||type==='superscript')return{type,text:text()};
   if(type==='custom_emoji')return{type:'custom_emoji',custom_emoji_id:el.dataset.id||'',alternative_text:el.textContent||'🙂'};
-  if(type==='mathematical_expression')return{type:'mathematical_expression',expression:el.dataset.expression||el.textContent||''};
   if(type==='date_time')return{type:'date_time',text:text(),unix_time:Number(el.dataset.unix)||0,...(el.dataset.format?{date_time_format:el.dataset.format}:{})};
   if(type==='email_address'||type==='phone_number'||type==='bank_card_number')return{type,text:text(),[type==='email_address'?'email_address':type==='phone_number'?'phone_number':'bank_card_number']:el.dataset.value||el.textContent||''};
-  if(type==='mention'||type==='hashtag'||type==='cashtag'||type==='bot_command')return{type,text:text()};
+  if(type==='mention')return{type,text:text(),username:el.dataset.value||el.textContent||''};
+  if(type==='hashtag')return{type,text:text(),hashtag:el.dataset.value||el.textContent||''};
+  if(type==='cashtag')return{type,text:text(),cashtag:el.dataset.value||el.textContent||''};
+  if(type==='bot_command')return{type,text:text(),bot_command:el.dataset.value||el.textContent||''};
+  if(type==='button')return{type:'button',button:{text:el.textContent||'',style:el.dataset.buttonStyle||'primary',...(el.dataset.buttonAction==='url'?{url:el.dataset.buttonValue||''}:el.dataset.buttonAction==='callback_data'?{callback_data:el.dataset.buttonValue||''}:el.dataset.buttonAction==='copy_text'?{copy_text:{text:el.dataset.buttonValue||''}}:{disabled:{}})}};
   const tag=el.tagName.toLowerCase(),t=text();
   if(tag==='strong'||tag==='b')return{type:'bold',text:t};
   if(tag==='em'||tag==='i')return{type:'italic',text:t};

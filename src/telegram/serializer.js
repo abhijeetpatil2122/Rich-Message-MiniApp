@@ -1,4 +1,5 @@
 function plain(value){return typeof value==='string'?value:'';}
+function plainStoredText(value){let s=plain(value);for(let i=0;i<3;i++){const box=document.createElement('div');box.innerHTML=s;const next=box.textContent||'';if(next===s)break;s=next}return s.replace(/<\\/?(?:div|p|br|span|font|b|i|u|strong|em)[^>]*>/gi,'')}
 function children(node){return [...node.childNodes].flatMap(richFromNode);}
 function richFromNode(node){
   if(node.nodeType===Node.TEXT_NODE)return node.nodeValue||'';
@@ -33,7 +34,7 @@ case'heading':return{type:'heading',text:richFromMarks(b.text,b.inlineMarks),siz
 case'pre':return{type:'pre',text:richFromMarks(b.text,b.inlineMarks),...(b.language?{language:b.language}:{})};
 case'divider':return{type:'divider'};
 case'spacing':return Array.from({length:Math.max(1,Math.min(8,Number(b.lines)||1))},()=>({type:'paragraph',text:''}));
-case'list':return{type:'list',items:b.items.filter(i=>String(i.text||'').replace(/<[^>]*>/g,'').trim()).map((i,n)=>{const o={blocks:[{type:'paragraph',text:rich(i.text)}]};if(b.style==='number'){o.type='1';o.value=n+1;}if(b.style==='checklist'){o.has_checkbox=true;o.is_checked=!!i.checked;}return o;})};
+case'list':return{type:'list',items:b.items.filter(i=>plainStoredText(i.text).trim()).map((i,n)=>{const o={blocks:[{type:'paragraph',text:plainStoredText(i.text)}]};if(b.style==='number'){o.type='1';o.value=n+1;}if(b.style==='checklist'){o.has_checkbox=true;o.is_checked=!!i.checked;}return o;})};
 case'blockquote':return{type:'blockquote',blocks:String(b.text||'').split('\\n').map(line=>({type:'paragraph',text:rich(line)})),...(b.credit?{credit:rich(b.credit)}:{})};
 case'expandable_blockquote':return{type:'expandable_blockquote',text:rich(b.text),...(b.credit?{credit:rich(b.credit)}:{})};
 case'pullquote':return{type:'pullquote',text:rich(b.text),...(b.credit?{credit:rich(b.credit)}:{})};

@@ -44,7 +44,7 @@ function RichInput({id,text,inline,placeholder,className='',onChange,onSelect,on
   useLayoutEffect(()=>{const node=ref.current;if(!node)return;if(lastRender.current!==renderKey){renderInline(node,inline);lastRender.current=renderKey}},[renderKey,inline]);
   return <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
     onFocus={()=>onSelect?.(ref.current)} onSelect={()=>onInlineSelect?.(ref.current)}
-    onInput={e=>{const next=readInline(e.currentTarget);onChange?.(inlineText(next),inlineHasMarks(next)?next:undefined,e.currentTarget)}}
+    onInput={e=>{const next=readInline(e.currentTarget),nextInline=inlineHasMarks(next)?next:undefined;lastRender.current=JSON.stringify(nextInline||[]);onChange?.(inlineText(next),nextInline,e.currentTarget)}}
     onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>;
 }
 function Editable({id,text,placeholder='',className='',onChange,onKeyDown}){const ref=useRef(null);useEffect(()=>{const node=ref.current;if(!node)return;const value=String(text??'');if(node.textContent!==value)node.textContent=value},[text]);return <div ref={ref} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} onInput={e=>onChange?.(e.currentTarget.textContent||'')} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}

@@ -1,9 +1,21 @@
 function plain(value){return typeof value==='string'?value:'';}
 function plainStoredText(value){return plain(value).replace(/<[^>]*>/g,'');}
+function richText(value,inline){
+  if(!Array.isArray(inline)||!inline.length)return plainStoredText(value);
+  const parts=[];
+  for(const segment of inline){
+    const text=plain(segment?.text);
+    if(!text)continue;
+    parts.push(segment?.marks?.bold?{type:'bold',text}:text);
+  }
+  if(!parts.length)return '';
+  if(parts.length===1&&typeof parts[0]==='string')return parts[0];
+  return parts;
+}
 export function serializeBlock(b){switch(b.type){
-case'paragraph':case'footer':return{type:b.type,text:plainStoredText(b.text)};
-case'heading':return{type:'heading',text:plainStoredText(b.text),size:b.size};
-case'pre':return{type:'pre',text:plainStoredText(b.text),...(b.language?{language:b.language}:{})};
+case'paragraph':case'footer':return{type:b.type,text:richText(b.text,b.inline)};
+case'heading':return{type:'heading',text:richText(b.text,b.inline),size:b.size};
+case'pre':return{type:'pre',text:richText(b.text,b.inline),...(b.language?{language:b.language}:{})};
 case'divider':return{type:'divider'};
 case'spacing':return Array.from({length:Math.max(1,Math.min(8,Number(b.lines)||1))},()=>({type:'paragraph',text:''}));
 case'list':return{type:'list',items:(b.items||[]).filter(i=>plainStoredText(i.text).trim()).map((i,n)=>{const o={blocks:[{type:'paragraph',text:plainStoredText(i.text)}]};if(b.style==='number'){o.type='1';o.value=n+1;}if(b.style==='checklist'){o.has_checkbox=true;o.is_checked=!!i.checked;}return o;})};

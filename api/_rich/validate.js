@@ -39,7 +39,8 @@ export function validateDocument(d){
   return{type,...(v.name?{name:String(v.name)}:{}),...(v.url?{url:String(v.url)}:{}),...(v.username?{username:String(v.username)}:{}),...(v.hashtag?{hashtag:String(v.hashtag)}:{}),...(v.cashtag?{cashtag:String(v.cashtag)}:{}),...(v.bot_command?{bot_command:String(v.bot_command)}:{})};
  };
  const inlineLines=(value,inline)=>{
-  if(!Array.isArray(inline))return String(value||'').split('\n').map(line=>({type:'paragraph',text:rt(line)}));
+  const hasInlineText=Array.isArray(inline)&&inline.some(seg=>String(seg?.text??'').length>0);
+  if(!hasInlineText)return String(value||'').split('\n').map(line=>({type:'paragraph',text:rt(line)}));
   const lines=[[]];
   for(const seg of inline){
    const parts=String(seg?.text??'').split('\n');
@@ -56,6 +57,7 @@ export function validateDocument(d){
    });
   }
   return lines.map(parts=>({type:'paragraph',text:parts.length===1?parts[0]:parts}));
+ }
  };
  const out=d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').replace(/<[^>]*>/g,'').trim())).flatMap(b=>{
   if(b.type==='divider')return{type:'divider'};

@@ -6,6 +6,15 @@ function wrapRichText(text,marks){
   if(marks?.bold)value={type:'bold',text:value};
   return value;
 }
+function richTextLines(value,inline){
+  const source=Array.isArray(inline)?inline:[{text:plain(value),marks:{}}];
+  const lines=[[]];
+  for(const segment of source){
+    const parts=String(segment?.text??'').split('\\n');
+    parts.forEach((part,index)=>{if(part)lines[lines.length-1].push(wrapRichText(part,segment?.marks||{}));if(index<parts.length-1)lines.push([])});
+  }
+  return lines.map(parts=>({type:'paragraph',text:parts.length===1&&typeof parts[0]==='string'?parts[0]:parts}));
+}
 function richText(value,inline){
   if(!Array.isArray(inline)||!inline.length)return plainStoredText(value);
   const parts=[];
@@ -24,8 +33,8 @@ case'pre':return{type:'pre',text:richText(b.text,b.inline),...(b.language?{langu
 case'divider':return{type:'divider'};
 case'spacing':return Array.from({length:Math.max(1,Math.min(8,Number(b.lines)||1))},()=>({type:'paragraph',text:''}));
 case'list':return{type:'list',items:(b.items||[]).filter(i=>plainStoredText(i.text).trim()).map((i,n)=>{const o={blocks:[{type:'paragraph',text:plainStoredText(i.text)}]};if(b.style==='number'){o.type='1';o.value=n+1;}if(b.style==='checklist'){o.has_checkbox=true;o.is_checked=!!i.checked;}return o;})};
-case'blockquote':return{type:'blockquote',blocks:String(b.text||'').split('\n').map(line=>({type:'paragraph',text:plainStoredText(line)})),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
-case'expandable_blockquote':return{type:'expandable_blockquote',text:plainStoredText(b.text),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
-case'pullquote':return{type:'pullquote',text:plainStoredText(b.text),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
+case'blockquote':return{type:'blockquote',blocks:richTextLines(b.text,b.inline),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
+case'expandable_blockquote':return{type:'expandable_blockquote',text:richText(b.text,b.inline),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
+case'pullquote':return{type:'pullquote',text:richText(b.text,b.inline),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
 default:throw new Error('Unsupported block type: '+b.type);}}
 export function serializeDocument(d){return{version:1,blocks:d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').trim())).flatMap(serializeBlock).filter(b=>b.type==='divider'||b.type==='paragraph'||b.text||b.items?.length)}}

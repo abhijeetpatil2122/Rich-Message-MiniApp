@@ -17,39 +17,145 @@ function contentSelection(node){
   if(!foundStart||!foundEnd)return null;
   return start<=end?{start,end}:{start:end,end:start};
 }
-function selectionOffset(node){if(node&&typeof node.selectionStart==='number')return node.selectionStart;return contentSelection(node)?.start||0}
+function selectionOffset(node){
+  if(node&&typeof node.selectionStart==='number')return node.selectionStart;
+  return contentSelection(node)?.start||0;
+}
 function setContentSelection(node,start,end=start){
-  if(!node)return;const range=document.createRange(),selection=window.getSelection?.();if(!selection)return;
-  const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let pos=0,startPoint=null,endPoint=null,n;
-  while((n=walker.nextNode())){const next=pos+(n.textContent?.length||0);if(startPoint===null&&start>=pos&&start<=next)startPoint=[n,start-pos];if(end>=pos&&end<=next){endPoint=[n,end-pos];break}pos=next}
-  if(!startPoint)startPoint=[node,node.childNodes.length];if(!endPoint)endPoint=startPoint;
-  range.setStart(startPoint[0],startPoint[1]);range.setEnd(endPoint[0],endPoint[1]);selection.removeAllRanges();selection.addRange(range);
+  if(!node)return;
+  const range=document.createRange(),selection=window.getSelection?.();
+  if(!selection)return;
+  const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
+  let pos=0,startPoint=null,endPoint=null,n;
+  while((n=walker.nextNode())){
+    const next=pos+(n.textContent?.length||0);
+    if(startPoint===null&&start>=pos&&start<=next)startPoint=[n,start-pos];
+    if(end>=pos&&end<=next){endPoint=[n,end-pos];break}
+    pos=next;
+  }
+  if(!startPoint)startPoint=[node,node.childNodes.length];
+  if(!endPoint)endPoint=startPoint;
+  range.setStart(startPoint[0],Math.max(0,Math.min(startPoint[0].textContent.length,startPoint[1])));
+  range.setEnd(endPoint[0],Math.max(0,Math.min(endPoint[0].textContent.length,endPoint[1])));
+  selection.removeAllRanges();selection.addRange(range);
 }
 function focus(id,offset=0,end=offset){
-  const node=document.querySelector('[data-editor-id="'+CSS.escape(id)+'"]');if(!node)return;node.focus();
-  if(typeof node.setSelectionRange==='function'){const value=String(node.value||''),a=Math.max(0,Math.min(value.length,offset)),z=Math.max(a,Math.min(value.length,end));node.setSelectionRange(a,z)}
-  else if(node.isContentEditable)setContentSelection(node,offset,end);
+  const node=document.querySelector('[data-editor-id="'+CSS.escape(id)+'"]');
+  if(!node)return;
+  node.focus();
+  if(typeof node.setSelectionRange==='function'){
+    const value=String(node.value||''),a=Math.max(0,Math.min(value.length,offset)),z=Math.max(a,Math.min(value.length,end));
+    node.setSelectionRange(a,z);
+  }else if(node.isContentEditable)setContentSelection(node,offset,end);
 }
+
 function PlainInput({id,text,placeholder,className='',singleLine=false,onChange,onSelect,onKeyDown,onInlineSelect}){const ref=useRef(null);const props={ref,['data-editor-id']:id,type:'text',className:'editable plain-input '+className,value:String(text??''),placeholder,spellCheck:true,autoCapitalize:'sentences',enterKeyHint:'enter',onFocus:()=>onSelect?.(ref.current),onSelect:e=>{onSelect?.(ref.current);onInlineSelect?.(ref.current)},onChange:e=>onChange?.(e.currentTarget.value,e.currentTarget),onKeyDown:e=>onKeyDown?.(e,e.currentTarget)};return <div className="plain-input-shell">{singleLine?<input {...props}/>:<textarea {...props} rows={1}/>}</div>}
 function renderInline(node,inline){
   node.innerHTML='';
-  for(const segment of normalizeInline(inline,'')){if(!segment.text)continue;if(segment.marks?.bold){const strong=document.createElement('strong');strong.textContent=segment.text;node.appendChild(strong)}else node.appendChild(document.createTextNode(segment.text))}
+  for(const segment of normalizeInline(inline,'')){
+    if(!segment.text)continue;
+    if(segment.marks?.bold){
+      const strong=document.createElement('strong');
+      strong.textContent=segment.text;
+      node.appendChild(strong);
+    }else node.appendChild(document.createTextNode(segment.text));
+  }
 }
 function readInline(node){
-  const out=[];const walk=(current,bold=false)=>{current.childNodes.forEach(child=>{if(child.nodeType===Node.TEXT_NODE){if(child.textContent)out.push({text:child.textContent,marks:{bold}})}else if(child.nodeType===Node.ELEMENT_NODE)walk(child,bold||child.tagName==='STRONG'||child.tagName==='B')})};
-  walk(node,false);return normalizeInline(out,node.textContent||'');
+  const out=[];
+  const walk=(current,bold=false)=>{
+    current.childNodes.forEach(child=>{
+      if(child.nodeType===Node.TEXT_NODE){
+        if(child.textContent)out.push({text:child.textContent,marks:{bold}});
+      }else if(child.nodeType===Node.ELEMENT_NODE){
+        walk(child,bold||child.tagName==='STRONG'||child.tagName==='B');
+      }
+    });
+  };
+  walk(node,false);
+  return normalizeInline(out,node.textContent||'');
+}
+function selectionPoint(node,offset){
+  if(!node)return null;
+  if(node.nodeType===Node.TEXT_NODE)return[node,Math.max(0,Math.min(node.textContent.length,offset))];
+  const child=node.childNodes[Math.min(offset,node.childNodes.length)];
+  if(child?.nodeType===Node.TEXT_NODE)return[child,0];
+  return[node,Math.min(offset,node.childNodes.length)];
+}
+function collapseRichSelection(node,offset){
+  const selection=window.getSelection?.();
+  if(!selection)return;
+  const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
+  let pos=0,n;
+  while((n=walker.nextNode())){
+    const next=pos+n.textContent.length;
+    if(offset<=next){
+      const range=document.createRange();
+      range.setStart(n,Math.max(0,offset-pos));
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      node.focus();
+      return;
+    }
+    pos=next;
+  }
+  const range=document.createRange();
+  range.selectNodeContents(node);range.collapse(false);
+  selection.removeAllRanges();selection.addRange(range);node.focus();
+}
+function removeBoldAtCaret(node){
+  const selection=window.getSelection?.();
+  if(!selection||!selection.rangeCount||!selection.isCollapsed)return;
+  let el=selection.anchorNode;
+  if(el?.nodeType===Node.TEXT_NODE)el=el.parentElement;
+  const strong=el?.closest?.('strong');
+  if(!strong||!node.contains(strong))return;
+  const range=document.createRange();
+  range.selectNodeContents(strong);
+  range.setStart(selection.anchorNode,selection.anchorOffset);
+  const after=range.cloneRange();
+  after.collapse(false);
+  const tail=strong.splitText?null:null;
+  const frag=after.extractContents();
+  const plain=document.createTextNode(frag.textContent||'');
+  strong.parentNode.insertBefore(plain,strong.nextSibling);
+  if(frag.textContent){} 
+  const caret=document.createRange();
+  caret.setStart(plain,0);caret.collapse(true);
+  selection.removeAllRanges();selection.addRange(caret);
 }
 function RichInput({id,text,inline,placeholder,className='',onChange,onSelect,onKeyDown,onInlineSelect}){
   const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef('');
-  useLayoutEffect(()=>{const node=ref.current;if(!node)return;if(lastRender.current!==renderKey){renderInline(node,inline);lastRender.current=renderKey}},[renderKey,inline]);
+  useLayoutEffect(()=>{
+    const node=ref.current;if(!node)return;
+    if(lastRender.current!==renderKey){
+      const saved=contentSelection(node);
+      renderInline(node,inline);
+      lastRender.current=renderKey;
+      if(saved)requestAnimationFrame(()=>setContentSelection(node,saved.start,saved.end));
+    }
+  },[renderKey,inline]);
   return <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
-    onFocus={()=>onSelect?.(ref.current)} onSelect={()=>onInlineSelect?.(ref.current)}
-    onInput={e=>{const next=readInline(e.currentTarget),nextInline=inlineHasMarks(next)?next:undefined;lastRender.current=JSON.stringify(nextInline||[]);onChange?.(inlineText(next),nextInline,e.currentTarget)}}
-    onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>;
+    onFocus={()=>onSelect?.(ref.current)}
+    onSelect={()=>onInlineSelect?.(ref.current)}
+    onKeyDown={e=>{
+      const selection=window.getSelection?.();
+      if(selection?.isCollapsed&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete')){
+        removeBoldAtCaret(e.currentTarget);
+      }
+      onKeyDown?.(e,e.currentTarget);
+    }}
+    onInput={e=>{
+      const next=readInline(e.currentTarget),nextInline=inlineHasMarks(next)?next:undefined;
+      lastRender.current=JSON.stringify(nextInline||[]);
+      onChange?.(inlineText(next),nextInline,e.currentTarget);
+    }}/>;
 }
 function Editable({id,text,placeholder='',className='',onChange,onKeyDown}){const ref=useRef(null);useEffect(()=>{const node=ref.current;if(!node)return;const value=String(text??'');if(node.textContent!==value)node.textContent=value},[text]);return <div ref={ref} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} onInput={e=>onChange?.(e.currentTarget.textContent||'')} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
 
 const inlineMenuItems=[
+ {type:'regular',label:'Regular',Icon:Pilcrow},
  {type:'bold',label:'Bold',Icon:Bold},
  {type:'italic',label:'Italic',Icon:Italic},
  {type:'underline',label:'Underline',Icon:Underline},
@@ -105,18 +211,62 @@ const hasContent=doc.blocks.some(b=>{if(b.type==='list')return b.items?.some(i=>
 useLayoutEffect(()=>{if(!pendingFocus.current)return;const target=pendingFocus.current;pendingFocus.current=null;requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(target.id)+'"]');if(!node)return;node.focus();if(typeof node.setSelectionRange==='function'){const value=String(node.value||'');const start=Math.max(0,Math.min(value.length,target.start??target.offset??0));const end=Math.max(start,Math.min(value.length,target.end??target.offset??start));node.setSelectionRange(start,end)}else focus(target.id,target.offset||target.start||0)})},[doc]);
 function commit(next,focusTarget=null,opts={}){const blocks=[];next.blocks.forEach((b,i)=>{blocks.push(b);if(b.type==='spacing'&&next.blocks[i+1]?.type!=='paragraph')blocks.push({id:crypto.randomUUID(),type:'paragraph',text:'',structural:true})});const normalized=blocks.length===next.blocks.length?next:{...next,blocks};record(history.current,doc,opts);if(focusTarget)pendingFocus.current={id:focusTarget.id,start:focusTarget.start??focusTarget.offset??0,end:focusTarget.end??focusTarget.start??focusTarget.offset??0};setDoc(normalized)}
 function captureInlineSelection(blockId,node){
-  if(!node)return;const range=typeof node.selectionStart==='number'?{start:Math.min(node.selectionStart,node.selectionEnd??node.selectionStart),end:Math.max(node.selectionStart,node.selectionEnd??node.selectionStart)}:contentSelection(node);
-  if(!range){setInlineSelection(null);return}setInlineSelection(range.end>range.start?{blockId,...range}:null);
+  if(!node)return;
+  const range=typeof node.selectionStart==='number'
+    ? {start:Math.min(node.selectionStart,node.selectionEnd??node.selectionStart),end:Math.max(node.selectionStart,node.selectionEnd??node.selectionStart)}
+    : contentSelection(node);
+  if(!range){setInlineSelection(null);return}
+  setInlineSelection(range.end>range.start?{blockId,...range}:null);
 }
 function textChange(id,text,inline){
-  commit({...doc,blocks:doc.blocks.map(b=>{if(b.id!==id)return b;const next={...b,text:String(text??'')};if(inline)next.inline=inline;else delete next.inline;return next})},null,{coalesce:true});
+  commit({...doc,blocks:doc.blocks.map(b=>{
+    if(b.id!==id)return b;
+    const next={...b,text:String(text??'')};
+    if(inline)next.inline=inline;else delete next.inline;
+    return next;
+  })},null,{coalesce:true});
 }
 function applyBold(){
-  if(!inlineSelection)return;const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);if(!block||!['paragraph','heading','footer'].includes(block.type))return;
-  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,'bold'),patch={...block,text:inlineText(result.inline,block.text||'')};
+  if(!inlineSelection)return;
+  const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
+  if(!block||!['paragraph','heading','footer'].includes(block.type))return;
+  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,'bold');
+  const patch={...block,text:inlineText(result.inline,block.text||'')};
   if(inlineHasMarks(result.inline))patch.inline=result.inline;else delete patch.inline;
-  commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},{id:block.id,start:inlineSelection.start,end:inlineSelection.end});
-  setInlineOpen(false);telegramHaptic('light');
+  commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},null,{coalesce:false});
+  setInlineOpen(false);
+  setInlineSelection(null);
+  requestAnimationFrame(()=>{
+    const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');
+    if(!node)return;
+    const end=inlineSelection.end;
+    node.focus();
+    if(node.isContentEditable)collapseRichSelection(node,end);
+  });
+  telegramHaptic('light');
+}
+function clearBold(){
+  if(!inlineSelection)return;
+  const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
+  if(!block||!['paragraph','heading','footer'].includes(block.type))return;
+  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,'bold');
+  const patch={...block,text:inlineText(result.inline,block.text||'')};
+  // Regular always removes bold, even if the selection is mixed.
+  const value=block.text||'',source=normalizeInline(block.inline,value),out=[];let cursor=0;
+  for(const seg of source){
+    const a=cursor,z=cursor+seg.text.length,from=Math.max(a,inlineSelection.start),to=Math.min(z,inlineSelection.end);
+    if(to>from)out.push({text:value.slice(a,from),marks:{...seg.marks}}, {text:value.slice(from,to),marks:{...seg.marks,bold:false}}, {text:value.slice(to,z),marks:{...seg.marks}});
+    else out.push(seg);
+    cursor=z;
+  }
+  const cleaned=normalizeInline(out,value).filter(x=>x.text);
+  patch.inline=inlineHasMarks(cleaned)?cleaned:undefined;
+  if(!patch.inline)delete patch.inline;
+  commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},null,{coalesce:false});
+  setInlineOpen(false);
+  setInlineSelection(null);
+  requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');if(node)collapseRichSelection(node,inlineSelection.end)});
+  telegramHaptic('light');
 }
 function key(block,e,node){const off=selectionOffset(node);setActive(block.id);if(e.key==='Enter'){if(block.type==='blockquote'||block.type==='expandable_blockquote'||block.type==='pullquote')return;e.preventDefault();if(block.type==='paragraph'&&!String(block.text||'').trim()){const r=promoteEmptyParagraphToSpacing(doc,block.id);if(r.nextId){commit(r.doc,{id:r.nextId});setActive(r.nextId);telegramHaptic('light')}return}const r=splitTextBlock(doc,block.id,off);if(r.nextId)commit(r.doc,{id:r.nextId});return}if(e.key==='Backspace'&&off===0){e.preventDefault();if(block.structural){const i=doc.blocks.findIndex(x=>x.id===block.id),prev=doc.blocks[i-1];if(prev?.intentionalEmpty){commit(removeBlock(doc,prev.id),{id:block.id});telegramHaptic('light');return}}const r=mergePrevious(doc,block.id);if(r.doc!==doc)commit(r.doc,{id:r.focusId,offset:r.offset})}}
 function listEnter(block,item,index,node){if(!item.text&&index===block.items.length-1){commit(removeBlock(doc,block.id));return}const off=selectionOffset(node);const r=splitListItem(doc,block.id,item.id,off);if(r.nextItemId)commit(r.doc,{id:r.nextItemId})}
@@ -133,6 +283,6 @@ const common={id:b.id,text:b.text||'',placeholder:b.structural?'Write somethingâ
 const textInput=()=>b.inline?<RichInput {...common} inline={b.inline} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>key(b,e,node)}/>:<PlainInput {...common} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text)=>textChange(b.id,text)} onKeyDown={(e,node)=>key(b,e,node)}/>;if(b.type==='spacing')return <div key={b.id} className={'editor-block spacing-editor-block '+(active===b.id?'active':'')} onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="spacing-control" onClick={e=>e.stopPropagation()}><button type="button" aria-label="Decrease spacing" disabled={b.lines<=1} onClick={()=>commit(updateSpacing(doc,b.id,b.lines-1))}><MinusCircle size={18}/></button><span>{b.lines} {b.lines===1?'line':'lines'}</span><button type="button" aria-label="Increase spacing" disabled={b.lines>=8} onClick={()=>commit(updateSpacing(doc,b.id,b.lines+1))}><Plus size={18}/></button></div></div>;if(b.type==='blockquote'||b.type==='expandable_blockquote'||b.type==='pullquote')return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='blockquote'?'blockquote-editor-block ':b.type==='expandable_blockquote'?'expandable-blockquote-editor-block ':'pullquote-editor-block ')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}<textarea data-editor-id={b.id} className={'editable quote-editable '+(b.type==='pullquote'?'pullquote-text':b.type==='expandable_blockquote'?'expandable-blockquote-text':'blockquote-text')} value={b.text||''} placeholder={common.placeholder} rows={1} spellCheck enterKeyHint="enter" autoCapitalize="sentences" onFocus={e=>{setActive(b.id);resizeQuote(e.currentTarget)}} onInput={e=>resizeQuote(e.currentTarget)} onChange={e=>textChange(b.id,e.target.value)} onKeyDown={e=>quoteKey(b,e,e.currentTarget)}/><div className={'quote-credit-wrap '+(b.type==='pullquote'?'pullquote-credit':b.type==='expandable_blockquote'?'expandable-blockquote-credit':'blockquote-credit')}><div className="quote-credit-field">{!String(b.credit||'').length&&<span className="quote-credit-placeholder" aria-hidden="true">Credit (optional)</span>}<Editable id={b.id+'-credit'} text={b.credit||''} placeholder="" className="quote-credit" onChange={t=>updateCredit(b.id,t)} onKeyDown={creditKey}/></div></div></div>;
 return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='heading'?'heading-editor-block ':b.type==='footer'?'footer-editor-block ':'')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}{textInput()}</div>}
 function menu(){const activeBlock=doc.blocks.find(b=>b.id===active)||doc.blocks[0];return <div className="format-menu" role="menu">{menuItems.map((item,i)=>item.divider?<div className="format-divider" key={'d'+i}/>:<button type="button" key={item.type+(item.size||'')} className={activeBlock?.type===item.type&&(!item.size||activeBlock?.size===item.size)?'selected':''} role="menuitem" onMouseDown={e=>e.preventDefault()} onClick={()=>type(item.type,{size:item.size})}><item.Icon size={19}/><span>{item.label}</span>{activeBlock?.type===item.type&&(!item.size||activeBlock?.size===item.size)&&<Check size={17} className="menu-check"/>}</button>)}</div>}
-function inlineMenu(){return <div className="inline-menu" role="menu">{inlineMenuItems.map((item,i)=>item.divider?<div className="format-divider" key={'id'+i}/>:<button type="button" key={item.type} className={'inline-menu-item '+(item.soon?'soon-item':'')} disabled={!!item.soon} role="menuitem" aria-disabled={item.soon||undefined} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(item.soon)return;if(item.type==='bold')applyBold();else telegramHaptic('light')}}><item.Icon size={18}/><span>{item.label}</span>{item.soon&&<small className="soon-badge">Soon</small>}</button>)}</div>}
+function inlineMenu(){return <div className="inline-menu" role="menu">{inlineMenuItems.map((item,i)=>item.divider?<div className="format-divider" key={'id'+i}/>:<button type="button" key={item.type} className={'inline-menu-item '+(item.soon?'soon-item':'')} disabled={!!item.soon} role="menuitem" aria-disabled={item.soon||undefined} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(item.soon)return;if(item.type==='bold')applyBold();else if(item.type==='regular')clearBold();else telegramHaptic('light')}}><item.Icon size={18}/><span>{item.label}</span>{item.soon&&<small className="soon-badge">Soon</small>}</button>)}</div>}
 return <div className="editor-shell"><div className="topbar"><button className="icon-button history-button" disabled={!history.current.past.length} onClick={()=>{const n=undo(history.current,doc);if(n){setDoc(n);telegramHaptic('light')}}} aria-label="Undo"><Undo2 size={19}/></button><button className="icon-button history-button" disabled={!history.current.future.length} onClick={()=>{const n=redo(history.current,doc);if(n){setDoc(n);telegramHaptic('light')}}} aria-label="Redo"><Redo2 size={19}/></button></div><main className="document-area">{doc.blocks.map(block)}</main><div className="composer-bar"><div className="format-wrap inline-format-wrap"><button type="button" className={'tool-button inline-format-button '+(inlineOpen?'active':'')} disabled={!inlineSelection} onClick={()=>{if(!inlineSelection)return;setInlineOpen(x=>!x);setOpen(false);telegramHaptic('light')}} aria-label="Inline formatting" aria-expanded={inlineOpen} title={inlineSelection?'Inline formatting':'Select text to format'}><span className="bold-glyph">B</span></button>{inlineOpen&&inlineSelection&&inlineMenu()}</div><div className="format-wrap"><button className={'tool-button format-button '+(open?'active':'')} onClick={()=>{setOpen(x=>!x);setInlineOpen(false);telegramHaptic('light')}} aria-label="Block type" aria-expanded={open}><span className="heading-glyph">H</span></button>{open&&menu()}</div><button className={'send-composer-button '+(hasContent?'visible':'')} onClick={()=>{if(!hasContent)return;telegramHaptic('light');onSend?.(doc)}} aria-label="Send rich message" aria-hidden={!hasContent} tabIndex={hasContent?0:-1} disabled={!hasContent}><SendHorizontal size={20}/></button></div></div>}
 export {serializeDocument};

@@ -204,7 +204,7 @@ function textChange(id,text,inline){
 function applyInlineFormatting(mark){
   if(!inlineSelection)return;
   const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
-  if(!block||!['paragraph','heading','footer'].includes(block.type))return;
+  if(!block||!['paragraph','heading','footer','blockquote','expandable_blockquote','pullquote'].includes(block.type))return;
   const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,mark);
   const patch={...block,text:inlineText(result.inline,block.text||'')};
   if(inlineHasMarks(result.inline))patch.inline=result.inline;else delete patch.inline;

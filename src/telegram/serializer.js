@@ -8,7 +8,7 @@ function wrapRichText(text,marks){
   return value;
 }
 function richTextLines(value,inline){
-  const source=Array.isArray(inline)?inline:[{text:plain(value),marks:{}}];
+  const hasInlineText=Array.isArray(inline)&&inline.some(segment=>String(segment?.text??'').length>0);const source=hasInlineText?inline:[{text:plain(value),marks:{}}];
   const lines=[[]];
   for(const segment of source){
     const parts=String(segment?.text??'').split('\n');

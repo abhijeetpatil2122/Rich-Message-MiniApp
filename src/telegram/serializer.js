@@ -38,4 +38,4 @@ case'blockquote':return{type:'blockquote',blocks:richTextLines(b.text,b.inline),
 case'expandable_blockquote':return{type:'expandable_blockquote',text:richText(b.text,b.inline),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
 case'pullquote':return{type:'pullquote',text:richText(b.text,b.inline),...(b.credit?{credit:plainStoredText(b.credit)}:{})};
 default:throw new Error('Unsupported block type: '+b.type);}}
-export function serializeDocument(d){return{version:1,blocks:d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').trim())).flatMap(serializeBlock).filter(b=>b.type==='divider'||b.type==='paragraph'||b.text||b.items?.length)}}
+export function serializeDocument(d){return{version:1,blocks:d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').trim())).flatMap(serializeBlock).filter(b=>b.type==='divider'||b.type==='paragraph'||b.type==='blockquote'||b.type==='expandable_blockquote'||b.type==='pullquote'||b.text||b.items?.length)}}

@@ -1,6 +1,6 @@
 import React,{useEffect,useLayoutEffect,useRef,useState}from'react';
 import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,ChevronsDownUp,Redo2,Undo2,Check,SendHorizontal,Trash2,Plus,MinusCircle,Bold,Italic,Underline,Strikethrough,EyeOff,Subscript,Superscript,Highlighter,Link2,AtSign,SmilePlus,Clock3,Mail,Phone,MousePointerClick,Hash,DollarSign,Terminal,CreditCard,SquareSigma,Anchor,BookOpen}from'lucide-react';
-import{createInitialDocument}from'../document/schema.js';import{inlineText,normalizeInline,applyInlineMark,removeInlineMark,inlineHasMarks}from'../document/inline.js';import{changeType,mergePrevious,removeBlock,splitListItem,updateListItem,removeListItem,splitTextBlock,ensureEditableNeighbors,promoteEmptyParagraphToSpacing,updateSpacing}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{telegramHaptic}from'../telegram/webApp.js';
+import{createInitialDocument}from'../document/schema.js';import{inlineText,normalizeInline,applyInlineMark,removeInlineMark,inlineHasMarks,sliceInline}from'../document/inline.js';import{changeType,mergePrevious,removeBlock,splitListItem,updateListItem,removeListItem,splitTextBlock,ensureEditableNeighbors,promoteEmptyParagraphToSpacing,updateSpacing}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{telegramHaptic}from'../telegram/webApp.js';
 
 function plainText(v){return String(v??'').replace(/<[^>]*>/g,'');}
 function contentSelection(node){
@@ -102,13 +102,30 @@ function collapseRichSelection(node,offset){
   const range=document.createRange();range.selectNodeContents(node);range.collapse(false);
   selection.removeAllRanges();selection.addRange(range);node.focus();
 }
+function insertInlineNewline(inline,text,start,end){
+  const value=inlineText(inline,text),a=Math.max(0,Math.min(value.length,Number(start)||0)),z=Math.max(a,Math.min(value.length,Number(end)||0));
+  const source=normalizeInline(inline,value),before=sliceInline(source,value,0,a),after=sliceInline(source,value,z,value.length);
+  let marks={};
+  let cursor=0;
+  for(const segment of source){
+    const next=cursor+segment.text.length;
+    if(a>cursor&&a<=next){marks={...segment.marks};break}
+    if(a===0){marks={...segment.marks};break}
+    cursor=next;
+  }
+  return normalizeInline([...before,{text:'\n',marks},...after],value.slice(0,a)+'\n'+value.slice(z));
+}
 function RichInput({id,text,inline,placeholder,className='',preserveNewlines=false,onChange,onSelect,onKeyDown,onInlineSelect}){
-  const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef(''),pendingInput=useRef(null);
+  const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef(''),pendingInput=useRef(null),pendingCaret=useRef(null);
   useLayoutEffect(()=>{
     const node=ref.current;if(!node)return;
     if(lastRender.current!==renderKey){
       const saved=contentSelection(node);renderInline(node,inline);lastRender.current=renderKey;
       if(saved)requestAnimationFrame(()=>setContentSelection(node,saved.start,saved.end));
+    }
+    if(pendingCaret.current!==null){
+      const caret=pendingCaret.current;pendingCaret.current=null;
+      requestAnimationFrame(()=>{if(ref.current)setContentSelection(ref.current,caret,caret)});
     }
   },[renderKey,inline]);
   const handleInput=(node)=>{
@@ -129,6 +146,15 @@ function RichInput({id,text,inline,placeholder,className='',preserveNewlines=fal
     lastRender.current=JSON.stringify(nextInline||[]);
     onChange?.(nextText,nextInline,node);
   };
+  const insertNewline=(node)=>{
+    const range=contentSelection(node);if(!range)return false;
+    const source=inline||[{text:String(text??''),marks:{}}];
+    const next=insertInlineNewline(source,inlineText(source,text||''),range.start,range.end);
+    pendingCaret.current=range.start+1;
+    lastRender.current=JSON.stringify(next);
+    onChange?.(inlineText(next),next,node);
+    return true;
+  };
   return <div className="rich-input-shell">
     <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
       onFocus={()=>onSelect?.(ref.current)}
@@ -136,6 +162,12 @@ function RichInput({id,text,inline,placeholder,className='',preserveNewlines=fal
       onBeforeInput={e=>{
         if(e.isComposing)return;
         const range=contentSelection(e.currentTarget);if(!range)return;
+        if(preserveNewlines&&(e.inputType==='insertParagraph'||e.inputType==='insertLineBreak')){
+          if(e.cancelable)e.preventDefault();
+          insertNewline(e.currentTarget);
+          pendingInput.current=null;
+          return;
+        }
         if(e.inputType==='insertText'||e.inputType==='insertReplacementText'||e.inputType==='insertFromPaste')
           pendingInput.current={start:range.start,end:range.end,data:String(e.data??'')};
         else pendingInput.current=null;
@@ -143,29 +175,13 @@ function RichInput({id,text,inline,placeholder,className='',preserveNewlines=fal
       onKeyDown={e=>{
         if(preserveNewlines&&e.key==='Enter'&&!e.isComposing){
           e.preventDefault();
-          const node=e.currentTarget,selection=window.getSelection?.();
-          if(selection?.rangeCount&&node.contains(selection.anchorNode)&&node.contains(selection.focusNode)){
-            const range=selection.getRangeAt(0);
-            range.deleteContents();
-            const br=document.createTextNode('\n');
-            range.insertNode(br);
-            range.setStartAfter(br);range.collapse(true);
-            selection.removeAllRanges();selection.addRange(range);
-            pendingInput.current=null;
-            handleInput(node);
-            const caret=contentSelection(node);
-            if(caret){
-              requestAnimationFrame(()=>{
-                if(ref.current) setContentSelection(ref.current,caret.start,caret.start);
-              });
-            }
-          }
+          insertNewline(e.currentTarget);
           return;
         }
         onKeyDown?.(e,e.currentTarget)
       }}
       onInput={e=>handleInput(e.currentTarget)}/>
-    {!String(text??'').length&&<span className={'editor-placeholder rich-input-placeholder '+(className.includes('pullquote-text')?'pullquote-text':className.includes('expandable-blockquote-text')?'expandable-blockquote-text':'blockquote-text')} aria-hidden="true">{placeholder}</span>}
+    {!String(text??'').length&&<span className={'editor-placeholder rich-input-placeholder quote-placeholder '+(className.includes('pullquote-text')?'pullquote-text':className.includes('expandable-blockquote-text')?'expandable-blockquote-text':'blockquote-text')} aria-hidden="true">{placeholder}</span>}
   </div>;
 }
 function Editable({id,text,placeholder='',className='',onChange,onKeyDown}){const ref=useRef(null);useEffect(()=>{const node=ref.current;if(!node)return;const value=String(text??'');if(node.textContent!==value)node.textContent=value},[text]);return <div ref={ref} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} onInput={e=>onChange?.(e.currentTarget.textContent||'')} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}

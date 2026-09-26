@@ -64,7 +64,7 @@ function applyRichConfig(){
  const b=doc.blocks.find(x=>x.id===cfg.blockId);if(!b||!b.runs)return;
  const start=Math.max(0,Number(cfg.start)||0),end=Math.max(start,Math.min(runsText(b.runs).length,Number(cfg.end)||0));if(end<=start)return;
  const before=sliceRuns(b.runs,0,start),target=sliceRuns(b.runs,start,end),after=sliceRuns(b.runs,end,runsText(b.runs).length);
- const updated=target.map(run=>createRun(run.text,[...new Set([...(run.marks||[]),'button'])],run.link));
+ const updated=target.map(run=>createRun(run.text,[...new Set([...(run.marks||[]),'button'])],run.link,{button:{style:cfg.style,action:cfg.action,value:cfg.value||''}}));
  commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,runs:mergeRuns(before,updated,after),text:runsText(mergeRuns(before,updated,after))}:x)});
  setActive(b.id);pendingFocus.current={id:b.id,start,end};selectionRef.current={blockId:b.id,start,end};setInlineSelection({blockId:b.id});setRichConfig(null);telegramHaptic('light');
 }

@@ -1,9 +1,10 @@
-const MARKS=Object.freeze(['bold']);
+const MARKS=Object.freeze(['bold','italic']);
 
 function cleanSegment(segment){
   const text=String(segment?.text??'');
   const marks={};
   if(segment?.marks?.bold===true)marks.bold=true;
+  if(segment?.marks?.italic===true)marks.italic=true;
   return{text,marks};
 }
 
@@ -14,7 +15,7 @@ export function normalizeInline(inline,text=''){
     const segment=cleanSegment(raw);
     if(!segment.text)continue;
     const prev=out[out.length-1];
-    if(prev&&!!prev.marks.bold===!!segment.marks.bold)prev.text+=segment.text;
+    if(prev&&MARKS.every(mark=>!!prev.marks[mark]===!!segment.marks[mark]))prev.text+=segment.text;
     else out.push(segment);
   }
   return out;
@@ -26,7 +27,26 @@ export function inlineText(inline,text=''){
 }
 
 export function inlineHasMarks(inline){
-  return Array.isArray(inline)&&inline.some(x=>x?.marks?.bold===true);
+  return Array.isArray(inline)&&inline.some(x=>MARKS.some(mark=>x?.marks?.[mark]===true));
+}
+
+export function removeInlineMark(inline,text,start,end,mark){
+  const value=inlineText(inline,text),a=Math.max(0,Math.min(value.length,Number(start)||0)),z=Math.max(a,Math.min(value.length,Number(end)||0));
+  if(a===z)return normalizeInline(inline,value);
+  const source=normalizeInline(inline,value),out=[];let cursor=0;
+  for(const seg of source){
+    const segStart=cursor,segEnd=cursor+seg.text.length,cuts=[segStart];
+    if(a>segStart&&a<segEnd)cuts.push(a);
+    if(z>segStart&&z<segEnd)cuts.push(z);
+    cuts.push(segEnd);
+    for(let n=0;n<cuts.length-1;n++){
+      const from=cuts[n],to=cuts[n+1];if(to<=from)continue;
+      const marks={...seg.marks};if(to>a&&from<z)delete marks[mark];
+      out.push({text:value.slice(from,to),marks});
+    }
+    cursor=segEnd;
+  }
+  return normalizeInline(out,value);
 }
 
 export function sliceInline(inline,text,start,end){

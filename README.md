@@ -14,3 +14,5 @@ The implementation is checked against the current official Telegram Bot API Rich
 
 
 <!-- rebuild deployment sync: 2026-09-25 -->
+
+<!-- Vercel deployment sync: 2026-09-26 -->

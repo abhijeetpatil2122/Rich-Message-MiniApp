@@ -1,12 +1,17 @@
 function plain(value){return typeof value==='string'?value:'';}
 function plainStoredText(value){return plain(value).replace(/<[^>]*>/g,'');}
+function wrapRichText(text,marks){
+  let value=text;
+  if(marks?.italic)value={type:'italic',text:value};
+  if(marks?.bold)value={type:'bold',text:value};
+  return value;
+}
 function richText(value,inline){
   if(!Array.isArray(inline)||!inline.length)return plainStoredText(value);
   const parts=[];
   for(const segment of inline){
-    const text=plain(segment?.text);
-    if(!text)continue;
-    parts.push(segment?.marks?.bold?{type:'bold',text}:text);
+    const text=plain(segment?.text);if(!text)continue;
+    parts.push(wrapRichText(text,segment?.marks||{}));
   }
   if(!parts.length)return '';
   if(parts.length===1&&typeof parts[0]==='string')return parts[0];

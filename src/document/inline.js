@@ -29,6 +29,22 @@ export function inlineHasMarks(inline){
   return Array.isArray(inline)&&inline.some(x=>x?.marks?.bold===true);
 }
 
+export function sliceInline(inline,text,start,end){
+  const value=inlineText(inline,text),a=Math.max(0,Math.min(value.length,Number(start)||0)),z=Math.max(a,Math.min(value.length,Number(end)||0));
+  if(a===z)return[];
+  const source=normalizeInline(inline,value),out=[];let cursor=0;
+  for(const segment of source){
+    const segStart=cursor,segEnd=cursor+segment.text.length,from=Math.max(a,segStart),to=Math.min(z,segEnd);
+    if(to>from)out.push({text:value.slice(from,to),marks:{...segment.marks}});
+    cursor=segEnd;
+  }
+  return normalizeInline(out,'');
+}
+
+export function concatInline(first,firstText,second,secondText){
+  return normalizeInline([...normalizeInline(first,firstText),...normalizeInline(second,secondText)],inlineText(first,firstText)+inlineText(second,secondText));
+}
+
 export function applyInlineMark(inline,text,start,end,mark='bold'){
   const value=inlineText(inline,text);
   const a=Math.max(0,Math.min(value.length,Number(start)||0));

@@ -1,10 +1,11 @@
-const MARKS=Object.freeze(['bold','italic']);
+const MARKS=Object.freeze(['bold','italic','underline']);
 
 function cleanSegment(segment){
   const text=String(segment?.text??'');
   const marks={};
   if(segment?.marks?.bold===true)marks.bold=true;
   if(segment?.marks?.italic===true)marks.italic=true;
+  if(segment?.marks?.underline===true)marks.underline=true;
   return{text,marks};
 }
 

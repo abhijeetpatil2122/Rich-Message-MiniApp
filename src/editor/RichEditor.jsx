@@ -219,7 +219,7 @@ function applyUnderline(){applyInlineFormatting('underline')}
 function clearRegular(){
   if(!inlineSelection)return;
   const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
-  if(!block||!['paragraph','heading','footer'].includes(block.type))return;
+  if(!block||!['paragraph','heading','footer','blockquote','expandable_blockquote','pullquote'].includes(block.type))return;
   const value=block.text||'';
   let cleaned=removeInlineMark(block.inline,value,inlineSelection.start,inlineSelection.end,'bold');
   cleaned=removeInlineMark(cleaned,value,inlineSelection.start,inlineSelection.end,'italic');

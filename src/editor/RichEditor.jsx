@@ -56,69 +56,17 @@ useEffect(()=>{if(!inlineSelection)setInlineOpen(false)},[inlineSelection]);useL
 function commit(next,focusTarget=null,opts={}){const blocks=[];next.blocks.forEach((b,i)=>{blocks.push(b);if(b.type==='spacing'&&next.blocks[i+1]?.type!=='paragraph')blocks.push({id:crypto.randomUUID(),type:'paragraph',text:'',structural:true})});const normalized=blocks.length===next.blocks.length?next:{...next,blocks};record(history.current,doc,opts);if(focusTarget)pendingFocus.current={id:focusTarget.id,offset:focusTarget.offset||0};setDoc(normalized)}
 function textChange(id,text){const clean=String(text||'').replace(/\u200B/g,'');const holder=document.createElement('div');holder.innerHTML=clean;const normalized=(holder.textContent||'').trim()===''?'':clean;commit({...doc,blocks:doc.blocks.map(b=>b.id===id?{...b,text:normalized}:b)},null,{coalesce:true})}
 function selectedRange(){const saved=selectionRef.current;if(!saved)return null;const start=Number(saved.start),end=Number(saved.end);if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return null;return{blockId:saved.blockId,start,end}}
-function updateSelectedMarks(type,config={}){
- const sel=selectedRange();if(!sel)return;
- const b=doc.blocks.find(x=>x.id===sel.blockId);if(!b)return;
- const length=String(b.text||'').length;
- const start=Math.max(0,Math.min(length,sel.start)),end=Math.max(start,Math.min(length,sel.end));
- const existing=Array.isArray(b.inlineMarks)?b.inlineMarks:[];
- const full=[...existing];
- const overlapping=full.filter(m=>m.start<end&&m.end>start);
- const isRegular=type==='regular';
- const next=[];
- for(const m of full){
-   if(m.end<=start||m.start>=end){next.push(m);continue}
-   if(m.start<start)next.push({...m,end:start});
-   if(m.end>end)next.push({...m,start:end});
- }
- if(!isRegular){
-   if(type==='bold'||type==='italic'||type==='underline'||type==='strikethrough'||type==='spoiler'||type==='code'||type==='marked'||type==='subscript'||type==='superscript'){
-     const allHave=overlapping.length>0&&overlapping.every(m=>m.type===type&&m.start<=start&&m.end>=end);
-     if(!allHave){
-       next.push({type,start,end});
-       if(type==='subscript'||type==='superscript'){
-         const opposite=type==='subscript'?'superscript':'subscript';
-         for(let i=next.length-1;i>=0;i--){const m=next[i];if(m.type===opposite&&m.start<end&&m.end>start){next.splice(i,1);if(m.start<start)next.push({...m,end:start});if(m.end>end)next.push({...m,start:end})}}
-       }
-     }else{
-       // already selected with this exact mark: leave it regular for this mark only
-     }
-   }else{
-     next.push({type,start,end,...config});
-   }
- }
- const sorted=next.filter(m=>m.end>m.start).sort((a,b)=>a.start-b.start||a.end-b.end);
- commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,inlineMarks:sorted}:x)});
- setActive(sel.blockId);
- requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(sel.blockId)+'"]');if(node){node.focus();node.setSelectionRange(sel.start,sel.end)}});
- selectionRef.current={blockId:sel.blockId,start:sel.start,end:sel.end};
- setInlineSelection({blockId:sel.blockId});
- setInlineOpen(false);
- telegramHaptic('light');
-}
-function applyInlineCommand(type){
- const sel=selectedRange();if(!sel)return;
- if(type==='regular'){updateSelectedMarks('regular');return}
- if(type==='button'){setRichConfig({blockId:sel.blockId,start:sel.start,end:sel.end,style:'primary',action:'url',value:''});setInlineOpen(false);return}
- if(['url','email_address','phone_number','bank_card_number','mention','hashtag','cashtag','bot_command','date_time'].includes(type)){
-   const value=window.prompt(type==='url'?'URL':type==='email_address'?'Email address':type==='phone_number'?'Phone number':type==='bank_card_number'?'Bank card':type);
-   if(!value)return;
-   updateSelectedMarks(type,type==='url'?{value}: {value});
-   return
- }
- updateSelectedMarks(type);
-}
+function updateSelectedMarks(type,config={}){const sel=selectedRange();if(!sel)return;const b=doc.blocks.find(x=>x.id===sel.blockId);if(!b||!b.runs)return;const fullLen=runsText(b.runs).length;const start=Math.max(0,Math.min(fullLen,sel.start)),end=Math.max(start,Math.min(fullLen,sel.end));const before=sliceRuns(b.runs,0,start),target=sliceRuns(b.runs,start,end),after=sliceRuns(b.runs,end,fullLen);const isRegular=type==='regular';let updatedTarget=target;if(isRegular)updatedTarget=target.map(run=>createRun(run.text));else if(['bold','italic','underline','strikethrough','spoiler','code','marked','subscript','superscript'].includes(type)){const allHave=target.length>0&&target.every(run=>run.marks.includes(type));const opposite=type==='subscript'?'superscript':type==='superscript'?'subscript':null;updatedTarget=target.map(run=>{let marks=allHave?run.marks.filter(m=>m!==type):[...new Set([...run.marks,type])];if(!allHave&&opposite)marks=marks.filter(m=>m!==opposite);return createRun(run.text,marks,run.link)})}else{return updateSelectedMarks(type,config)}commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,runs:mergeRuns(before,updatedTarget,after)}:x)});setActive(sel.blockId);pendingFocus.current={id:sel.blockId,offset:end};setInlineSelection({blockId:sel.blockId});telegramHaptic('light')}
+function applyInlineCommand(type){const sel=selectedRange();if(!sel)return;if(type==='regular'){updateSelectedMarks('regular');return}if(type==='button'){setRichConfig({blockId:sel.blockId,start:sel.start,end:sel.end,style:'primary',action:'url',value:''});setInlineOpen(false);return}updateSelectedMarks(type)}
 
 function applyRichConfig(){
  const cfg=richConfig;if(!cfg)return;
- const b=doc.blocks.find(x=>x.id===cfg.blockId);if(!b)return;
- const start=Math.max(0,Number(cfg.start)||0),end=Math.max(start,Math.min(String(b.text||'').length,Number(cfg.end)||0));if(end<=start)return;
- const mark={type:'button',start,end,style:cfg.style,action:cfg.action,value:cfg.value||''};
- const existing=Array.isArray(b.inlineMarks)?b.inlineMarks:[];
- const next=[...existing.filter(m=>m.end<=start||m.start>=end),mark].sort((a,b)=>a.start-b.start||a.end-b.end);
- commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,inlineMarks:next}:x)});
- requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(b.id)+'"]');if(node){node.focus();node.setSelectionRange(start,end)}});
- selectionRef.current={blockId:b.id,start,end};setInlineSelection({blockId:b.id});setRichConfig(null);telegramHaptic('light');
+ const b=doc.blocks.find(x=>x.id===cfg.blockId);if(!b||!b.runs)return;
+ const start=Math.max(0,Number(cfg.start)||0),end=Math.max(start,Math.min(runsText(b.runs).length,Number(cfg.end)||0));if(end<=start)return;
+ const before=sliceRuns(b.runs,0,start),target=sliceRuns(b.runs,start,end),after=sliceRuns(b.runs,end,runsText(b.runs).length);
+ const updated=target.map(run=>createRun(run.text,[...new Set([...(run.marks||[]),'button'])],run.link));
+ commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,runs:mergeRuns(before,updated,after)}:x)});
+ setActive(b.id);pendingFocus.current={id:b.id,offset:end};selectionRef.current={blockId:b.id,start,end};setInlineSelection({blockId:b.id});setRichConfig(null);telegramHaptic('light');
 }
 
 function key(block,e,node){const off=selectionOffset(node);setActive(block.id);if(e.key==='Enter'){if(block.type==='blockquote'||block.type==='expandable_blockquote'||block.type==='pullquote')return;e.preventDefault();if(block.type==='paragraph'&&!String(block.text||'').trim()){const r=promoteEmptyParagraphToSpacing(doc,block.id);if(r.nextId){commit(r.doc,{id:r.nextId});setActive(r.nextId);telegramHaptic('light')}return}const r=splitTextBlock(doc,block.id,off);if(r.nextId)commit(r.doc,{id:r.nextId});return}if(e.key==='Backspace'&&off===0){e.preventDefault();if(block.structural){const i=doc.blocks.findIndex(x=>x.id===block.id),prev=doc.blocks[i-1];if(prev?.intentionalEmpty){commit(removeBlock(doc,prev.id),{id:block.id});telegramHaptic('light');return}}const r=mergePrevious(doc,block.id);if(r.doc!==doc)commit(r.doc,{id:r.focusId,offset:r.offset})}}

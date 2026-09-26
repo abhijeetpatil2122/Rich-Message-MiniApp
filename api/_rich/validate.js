@@ -41,9 +41,9 @@ export function validateDocument(d){
  const out=d.blocks.filter(b=>!(b.type==='paragraph'&&b.structural&&!String(b.text||'').replace(/<[^>]*>/g,'').trim())).flatMap(b=>{
   if(b.type==='divider')return{type:'divider'};
   if(b.type==='spacing'){if(!Number.isInteger(b.lines)||b.lines<1||b.lines>8)throw new Error('Invalid spacing.');return Array.from({length:b.lines},()=>({type:'paragraph',text:''}));}
-  if(b.type==='heading'){if(!Number.isInteger(b.size)||b.size<1||b.size>6)throw new Error('Invalid heading size.');return{type:'heading',text:rt(b.inline??b.text||''),size:b.size};}
-  if(b.type==='pre')return{type:'pre',text:rt(b.inline??b.text||''),...(b.language?{language:String(b.language)}:{})};
-  if(b.type==='paragraph'||b.type==='footer')return{type:b.type,text:rt(b.inline??b.text||'')};
+  if(b.type==='heading'){if(!Number.isInteger(b.size)||b.size<1||b.size>6)throw new Error('Invalid heading size.');return{type:'heading',text:rt((b.inline??b.text)||''),size:b.size};}
+  if(b.type==='pre')return{type:'pre',text:rt((b.inline??b.text)||''),...(b.language?{language:String(b.language)}:{})};
+  if(b.type==='paragraph'||b.type==='footer')return{type:b.type,text:rt((b.inline??b.text)||'')};
   if(b.type==='list'){if(!Array.isArray(b.items)||!b.items.length)throw new Error('Invalid list.');return{type:'list',items:b.items.map((i,n)=>{const blocks=Array.isArray(i.blocks)&&i.blocks.length?i.blocks.map(x=>({type:'paragraph',text:rt(x?.text||'')})):[{type:'paragraph',text:rt(i.text||'')}];const o={blocks};const itemType=i.type||null;if(itemType&&['1','a','A','i','I'].includes(itemType)){o.type=itemType;o.value=Number.isInteger(i.value)?i.value:n+1}if(i.has_checkbox===true){o.has_checkbox=true;o.is_checked=!!i.is_checked}return o;})};}
   if(b.type==='blockquote')return{type:'blockquote',blocks:String(b.text||'').split('\\n').map(line=>({type:'paragraph',text:rt(line)})),...(b.credit?{credit:rt(b.credit)}:{})};
   if(b.type==='expandable_blockquote')return{type:'expandable_blockquote',text:rt(b.text||''),...(b.credit?{credit:rt(b.credit)}:{})};

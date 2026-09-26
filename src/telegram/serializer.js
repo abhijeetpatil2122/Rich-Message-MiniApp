@@ -2,6 +2,7 @@ function plain(value){return typeof value==='string'?value:'';}
 function plainStoredText(value){return plain(value).replace(/<[^>]*>/g,'');}
 function wrapRichText(text,marks){
   let value=text;
+  if(marks?.underline)value={type:'underline',text:value};
   if(marks?.italic)value={type:'italic',text:value};
   if(marks?.bold)value={type:'bold',text:value};
   return value;
@@ -10,7 +11,7 @@ function richTextLines(value,inline){
   const source=Array.isArray(inline)?inline:[{text:plain(value),marks:{}}];
   const lines=[[]];
   for(const segment of source){
-    const parts=String(segment?.text??'').split('\\n');
+    const parts=String(segment?.text??'').split('\n');
     parts.forEach((part,index)=>{if(part)lines[lines.length-1].push(wrapRichText(part,segment?.marks||{}));if(index<parts.length-1)lines.push([])});
   }
   return lines.map(parts=>({type:'paragraph',text:parts.length===1&&typeof parts[0]==='string'?parts[0]:parts}));

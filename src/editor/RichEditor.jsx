@@ -106,24 +106,43 @@ function collapseRichSelection(node,offset){
 }
 function removeBoldAtCaret(node){
   const selection=window.getSelection?.();
-  if(!selection||!selection.rangeCount||!selection.isCollapsed)return;
+  if(!selection||!selection.rangeCount||!selection.isCollapsed)return false;
   let el=selection.anchorNode;
   if(el?.nodeType===Node.TEXT_NODE)el=el.parentElement;
   const strong=el?.closest?.('strong');
-  if(!strong||!node.contains(strong))return;
-  const range=document.createRange();
-  range.selectNodeContents(strong);
-  range.setStart(selection.anchorNode,selection.anchorOffset);
-  const after=range.cloneRange();
-  after.collapse(false);
-  const tail=strong.splitText?null:null;
-  const frag=after.extractContents();
-  const plain=document.createTextNode(frag.textContent||'');
-  strong.parentNode.insertBefore(plain,strong.nextSibling);
-  if(frag.textContent){} 
+  if(!strong||!node.contains(strong))return false;
+
+  const offsetRange=document.createRange();
+  offsetRange.selectNodeContents(strong);
+  offsetRange.setEnd(selection.anchorNode,selection.anchorOffset);
+  const offset=offsetRange.toString().length;
+  const value=strong.textContent||'';
+  const parent=strong.parentNode;
+  if(!parent)return false;
+
+  const before=value.slice(0,offset);
+  const after=value.slice(offset);
+  const beforeStrong=document.createElement('strong');
+  const beforeText=document.createTextNode(before);
+  const plain=document.createTextNode(after);
+
+  if(offset===0){
+    parent.insertBefore(plain,strong);
+  }else if(offset===value.length){
+    parent.insertBefore(plain,strong.nextSibling);
+  }else{
+    beforeStrong.appendChild(beforeText);
+    parent.insertBefore(beforeStrong,strong);
+    parent.insertBefore(plain,strong);
+  }
+  parent.removeChild(strong);
+
   const caret=document.createRange();
-  caret.setStart(plain,0);caret.collapse(true);
-  selection.removeAllRanges();selection.addRange(caret);
+  caret.setStart(plain,0);
+  caret.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(caret);
+  return true;
 }
 function RichInput({id,text,inline,placeholder,className='',onChange,onSelect,onKeyDown,onInlineSelect}){
   const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef('');
@@ -139,9 +158,14 @@ function RichInput({id,text,inline,placeholder,className='',onChange,onSelect,on
   return <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
     onFocus={()=>onSelect?.(ref.current)}
     onSelect={()=>onInlineSelect?.(ref.current)}
+    onBeforeInput={e=>{
+      if(e.inputType==='insertText'&&!e.isComposing){
+        removeBoldAtCaret(e.currentTarget);
+      }
+    }}
     onKeyDown={e=>{
       const selection=window.getSelection?.();
-      if(selection?.isCollapsed&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete')){
+      if(selection?.isCollapsed&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
         removeBoldAtCaret(e.currentTarget);
       }
       onKeyDown?.(e,e.currentTarget);

@@ -111,51 +111,62 @@ function RichInput({id,text,inline,placeholder,className='',preserveNewlines=fal
       if(saved)requestAnimationFrame(()=>setContentSelection(node,saved.start,saved.end));
     }
   },[renderKey,inline]);
-  return <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
-    onFocus={()=>onSelect?.(ref.current)}
-    onSelect={()=>onInlineSelect?.(ref.current)}
-    onBeforeInput={e=>{
-      if(e.isComposing)return;
-      const range=contentSelection(e.currentTarget);if(!range)return;
-      if(e.inputType==='insertText'||e.inputType==='insertReplacementText'||e.inputType==='insertFromPaste')
-        pendingInput.current={start:range.start,end:range.end,data:String(e.data??'')};
-      else pendingInput.current=null;
-    }}
-    onKeyDown={e=>{
-      if(preserveNewlines&&e.key==='Enter'&&!e.isComposing){
-        e.preventDefault();
-        const node=e.currentTarget,selection=window.getSelection?.();
-        if(selection?.rangeCount&&node.contains(selection.anchorNode)&&node.contains(selection.focusNode)){
-          const range=selection.getRangeAt(0);
-          range.deleteContents();
-          const br=document.createTextNode('\n');
-          range.insertNode(br);
-          range.setStartAfter(br);range.collapse(true);
-          selection.removeAllRanges();selection.addRange(range);
-          node.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'\n'}));
+  const handleInput=(node)=>{
+    let next=readInline(node),pending=pendingInput.current;
+    if(pending){
+      const insertedLength=pending.data.length;
+      const replacementLength=pending.end-pending.start;
+      const nextLength=inlineText(next).length;
+      const expectedLength=inlineText(inline||[]).length-replacementLength+insertedLength;
+      const delta=Math.max(0,nextLength-expectedLength);
+      const insertedEnd=Math.max(pending.start,Math.min(nextLength,pending.start+insertedLength+delta));
+      next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'bold');
+      next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'italic');
+      next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'underline');
+    }
+    pendingInput.current=null;
+    const nextText=inlineText(next),nextInline=inlineHasMarks(next)?next:undefined;
+    lastRender.current=JSON.stringify(nextInline||[]);
+    onChange?.(nextText,nextInline,node);
+  };
+  return <div className="rich-input-shell">
+    <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
+      onFocus={()=>onSelect?.(ref.current)}
+      onSelect={()=>onInlineSelect?.(ref.current)}
+      onBeforeInput={e=>{
+        if(e.isComposing)return;
+        const range=contentSelection(e.currentTarget);if(!range)return;
+        if(e.inputType==='insertText'||e.inputType==='insertReplacementText'||e.inputType==='insertFromPaste')
+          pendingInput.current={start:range.start,end:range.end,data:String(e.data??'')};
+        else pendingInput.current=null;
+      }}
+      onKeyDown={e=>{
+        if(preserveNewlines&&e.key==='Enter'&&!e.isComposing){
+          e.preventDefault();
+          const node=e.currentTarget,selection=window.getSelection?.();
+          if(selection?.rangeCount&&node.contains(selection.anchorNode)&&node.contains(selection.focusNode)){
+            const range=selection.getRangeAt(0);
+            range.deleteContents();
+            const br=document.createTextNode('\n');
+            range.insertNode(br);
+            range.setStartAfter(br);range.collapse(true);
+            selection.removeAllRanges();selection.addRange(range);
+            pendingInput.current=null;
+            handleInput(node);
+            const caret=contentSelection(node);
+            if(caret){
+              requestAnimationFrame(()=>{
+                if(ref.current) setContentSelection(ref.current,caret.start,caret.start);
+              });
+            }
+          }
+          return;
         }
-        return;
-      }
-      onKeyDown?.(e,e.currentTarget)
-    }}
-    onInput={e=>{
-      let next=readInline(e.currentTarget),pending=pendingInput.current;
-      if(pending){
-        const insertedLength=pending.data.length;
-        const replacementLength=pending.end-pending.start;
-        const nextLength=inlineText(next).length;
-        const expectedLength=inlineText(inline||[]).length-replacementLength+insertedLength;
-        const delta=Math.max(0,nextLength-expectedLength);
-        const insertedEnd=Math.max(pending.start,Math.min(nextLength,pending.start+insertedLength+delta));
-        next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'bold');
-        next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'italic');
-        next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'underline');
-      }
-      pendingInput.current=null;
-      const nextText=inlineText(next),nextInline=inlineHasMarks(next)?next:undefined;
-      lastRender.current=JSON.stringify(nextInline||[]);
-      onChange?.(nextText,nextInline,e.currentTarget);
-    }}/>;
+        onKeyDown?.(e,e.currentTarget)
+      }}
+      onInput={e=>handleInput(e.currentTarget)}/>
+    {!String(text??'').length&&<span className={'editor-placeholder rich-input-placeholder '+(className.includes('pullquote-text')?'pullquote-text':className.includes('expandable-blockquote-text')?'expandable-blockquote-text':'blockquote-text')} aria-hidden="true">{placeholder}</span>}
+  </div>;
 }
 function Editable({id,text,placeholder='',className='',onChange,onKeyDown}){const ref=useRef(null);useEffect(()=>{const node=ref.current;if(!node)return;const value=String(text??'');if(node.textContent!==value)node.textContent=value},[text]);return <div ref={ref} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} onInput={e=>onChange?.(e.currentTarget.textContent||'')} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
 
@@ -274,7 +285,7 @@ function resizeQuote(node){if(!node)return;node.style.height='auto';node.style.h
 function creditKey(e){if(e.key==='Enter')e.preventDefault()}
 function block(b){const canDelete=active===b.id;const del=<button type="button" className="block-delete" aria-label={`Delete ${b.type}`} onMouseDown={e=>e.preventDefault()} onClick={e=>{e.stopPropagation();deleteBlock(b.id)}}><Trash2 size={16}/></button>;if(b.type==='divider')return <div key={b.id} className="editor-block divider-editor-block" onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="divider-block"/></div>;if(b.type==='pre')return <div key={b.id} className="editor-block pre-editor-block" onFocus={()=>setActive(b.id)}>{canDelete&&del}<div className="pre-wrap"><textarea data-editor-id={b.id} value={b.text} placeholder="Code…" onFocus={()=>setActive(b.id)} onChange={e=>commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,text:e.target.value}:x)})}/><select value={b.language} onChange={e=>commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,language:e.target.value}:x)})}><option value="">Plain text</option>{['javascript','typescript','python','html','css','json','bash','sql','java','c','cpp','csharp','go','rust','php','kotlin','swift','xml','yaml','markdown'].map(x=><option key={x} value={x}>{x}</option>)}</select></div></div>;if(b.type==='list')return <div className="editor-block list-editor-block" key={b.id} onFocus={()=>setActive(b.id)}>{canDelete&&del}<div className="list-block">{b.items.map((i,n)=><div className="list-item" key={i.id}><span className="marker">{b.style==='number'?n+1+'.':b.style==='checklist'?<input type="checkbox" checked={!!i.checked} onChange={e=>commit(updateListItem(doc,b.id,i.id,{checked:e.target.checked}))}/>: '•'}</span><PlainInput id={i.id} text={i.text} placeholder="List item" className="list-editable" singleLine onSelect={()=>setActive(b.id)} onBeforeInput={(e,n)=>listBeforeInput(b,i,n,e,n)} onChange={(t)=>commit(updateListItem(doc,b.id,i.id,{text:String(t||'').replace(/[\\r\\n]/g,'')}),null,{coalesce:true})} onKeyDown={(e,n)=>listKey(b,i,n,e,n)}/></div>)}</div></div>;
 const common={id:b.id,text:b.text||'',placeholder:b.structural?'Write something…':b.type==='heading'?'Heading '+b.size:b.type==='footer'?'Footer':b.type==='blockquote'?'Blockquote':b.type==='expandable_blockquote'?'Expandable Blockquote':b.type==='pullquote'?'Pull Quote':'Write something…',className:b.type==='heading'?'heading h-'+b.size:b.type==='footer'?'footer':''};
-const textInput=()=>b.inline?<RichInput {...common} inline={b.inline} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>key(b,e,node)}/>:<PlainInput {...common} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text)=>textChange(b.id,text)} onKeyDown={(e,node)=>key(b,e,node)}/>;if(b.type==='spacing')return <div key={b.id} className={'editor-block spacing-editor-block '+(active===b.id?'active':'')} onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="spacing-control" onClick={e=>e.stopPropagation()}><button type="button" aria-label="Decrease spacing" disabled={b.lines<=1} onClick={()=>commit(updateSpacing(doc,b.id,b.lines-1))}><MinusCircle size={18}/></button><span>{b.lines} {b.lines===1?'line':'lines'}</span><button type="button" aria-label="Increase spacing" disabled={b.lines>=8} onClick={()=>commit(updateSpacing(doc,b.id,b.lines+1))}><Plus size={18}/></button></div></div>;if(b.type==='blockquote'||b.type==='expandable_blockquote'||b.type==='pullquote')return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='blockquote'?'blockquote-editor-block ':b.type==='expandable_blockquote'?'expandable-blockquote-editor-block ':'pullquote-editor-block ')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}{!String(b.text||'').length&&<span className={'editor-placeholder '+(b.type==='pullquote'?'pullquote-text':b.type==='expandable_blockquote'?'expandable-blockquote-text':'blockquote-text')} aria-hidden="true">{b.type==='blockquote'?'Blockquote':b.type==='expandable_blockquote'?'Expandable Blockquote':'Pull Quote'}</span>}<RichInput {...common} preserveNewlines inline={b.inline||[{text:b.text||'',marks:{}}]} className={'quote-editable '+(b.type==='pullquote'?'pullquote-text':b.type==='expandable_blockquote'?'expandable-blockquote-text':'blockquote-text')} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>{if(e.key==='Backspace'&&selectionOffset(node)===0){e.preventDefault();quoteKey(b,e,node);return}key(b,e,node)}}/><div className={'quote-credit-wrap '+(b.type==='pullquote'?'pullquote-credit':b.type==='expandable_blockquote'?'expandable-blockquote-credit':'blockquote-credit')}><div className="quote-credit-field">{!String(b.credit||'').length&&<span className="quote-credit-placeholder" aria-hidden="true">Credit (optional)</span>}<Editable id={b.id+'-credit'} text={b.credit||''} placeholder="" className="quote-credit" onChange={t=>updateCredit(b.id,t)} onKeyDown={creditKey}/></div></div></div>;
+const textInput=()=>b.inline?<RichInput {...common} inline={b.inline} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>key(b,e,node)}/>:<PlainInput {...common} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text)=>textChange(b.id,text)} onKeyDown={(e,node)=>key(b,e,node)}/>;if(b.type==='spacing')return <div key={b.id} className={'editor-block spacing-editor-block '+(active===b.id?'active':'')} onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="spacing-control" onClick={e=>e.stopPropagation()}><button type="button" aria-label="Decrease spacing" disabled={b.lines<=1} onClick={()=>commit(updateSpacing(doc,b.id,b.lines-1))}><MinusCircle size={18}/></button><span>{b.lines} {b.lines===1?'line':'lines'}</span><button type="button" aria-label="Increase spacing" disabled={b.lines>=8} onClick={()=>commit(updateSpacing(doc,b.id,b.lines+1))}><Plus size={18}/></button></div></div>;if(b.type==='blockquote'||b.type==='expandable_blockquote'||b.type==='pullquote')return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='blockquote'?'blockquote-editor-block ':b.type==='expandable_blockquote'?'expandable-blockquote-editor-block ':'pullquote-editor-block ')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}<RichInput {...common} preserveNewlines inline={b.inline||[{text:b.text||'',marks:{}}]} className={'quote-editable '+(b.type==='pullquote'?'pullquote-text':b.type==='expandable_blockquote'?'expandable-blockquote-text':'blockquote-text')} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>{if(e.key==='Backspace'&&selectionOffset(node)===0){e.preventDefault();quoteKey(b,e,node);return}key(b,e,node)}}/><div className={'quote-credit-wrap '+(b.type==='pullquote'?'pullquote-credit':b.type==='expandable_blockquote'?'expandable-blockquote-credit':'blockquote-credit')}><div className="quote-credit-field">{!String(b.credit||'').length&&<span className="quote-credit-placeholder" aria-hidden="true">Credit (optional)</span>}<Editable id={b.id+'-credit'} text={b.credit||''} placeholder="" className="quote-credit" onChange={t=>updateCredit(b.id,t)} onKeyDown={creditKey}/></div></div></div>;
 return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='heading'?'heading-editor-block ':b.type==='footer'?'footer-editor-block ':'')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}{textInput()}</div>}
 function menu(){const activeBlock=doc.blocks.find(b=>b.id===active)||doc.blocks[0];return <div className="format-menu" role="menu">{menuItems.map((item,i)=>item.divider?<div className="format-divider" key={'d'+i}/>:<button type="button" key={item.type+(item.size||'')} className={activeBlock?.type===item.type&&(!item.size||activeBlock?.size===item.size)?'selected':''} role="menuitem" onMouseDown={e=>e.preventDefault()} onClick={()=>type(item.type,{size:item.size})}><item.Icon size={19}/><span>{item.label}</span>{activeBlock?.type===item.type&&(!item.size||activeBlock?.size===item.size)&&<Check size={17} className="menu-check"/>}</button>)}</div>}
 function inlineMenu(){return <div className="inline-menu" role="menu">{inlineMenuItems.map((item,i)=>item.divider?<div className="format-divider" key={'id'+i}/>:<button type="button" key={item.type} className={'inline-menu-item '+(item.soon?'soon-item':'')} disabled={!!item.soon} role="menuitem" aria-disabled={item.soon||undefined} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(item.soon)return;if(item.type==='bold')applyBold();else if(item.type==='italic')applyItalic();else if(item.type==='regular')clearRegular();else if(item.type==='underline')applyUnderline();else telegramHaptic('light')}}><item.Icon size={18}/><span>{item.label}</span>{item.soon&&<small className="soon-badge">Soon</small>}</button>)}</div>}

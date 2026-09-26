@@ -128,11 +128,11 @@ function RichInput({id,text,inline,placeholder,className='',preserveNewlines=fal
         if(selection?.rangeCount&&node.contains(selection.anchorNode)&&node.contains(selection.focusNode)){
           const range=selection.getRangeAt(0);
           range.deleteContents();
-          const br=document.createTextNode('\\n');
+          const br=document.createTextNode('\n');
           range.insertNode(br);
           range.setStartAfter(br);range.collapse(true);
           selection.removeAllRanges();selection.addRange(range);
-          node.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'\\n'}));
+          node.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'\n'}));
         }
         return;
       }

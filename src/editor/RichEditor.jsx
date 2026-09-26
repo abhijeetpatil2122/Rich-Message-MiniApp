@@ -1,6 +1,6 @@
 import React,{useEffect,useLayoutEffect,useRef,useState}from'react';
 import{Code2,Heading1,Heading2,Heading3,Heading4,Heading5,Heading6,List,ListChecks,ListOrdered,Minus,Pilcrow,Quote,ChevronsDownUp,Redo2,Undo2,Check,SendHorizontal,Trash2,Plus,MinusCircle,Bold,Italic,Underline,Strikethrough,EyeOff,Subscript,Superscript,Highlighter,Link2,AtSign,SmilePlus,Clock3,Mail,Phone,MousePointerClick,Hash,DollarSign,Terminal,CreditCard,SquareSigma,Anchor,BookOpen}from'lucide-react';
-import{createInitialDocument}from'../document/schema.js';import{inlineText,normalizeInline,applyInlineMark,inlineHasMarks}from'../document/inline.js';import{changeType,mergePrevious,removeBlock,splitListItem,updateListItem,removeListItem,splitTextBlock,ensureEditableNeighbors,promoteEmptyParagraphToSpacing,updateSpacing}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{telegramHaptic}from'../telegram/webApp.js';
+import{createInitialDocument}from'../document/schema.js';import{inlineText,normalizeInline,applyInlineMark,removeInlineMark,inlineHasMarks}from'../document/inline.js';import{changeType,mergePrevious,removeBlock,splitListItem,updateListItem,removeListItem,splitTextBlock,ensureEditableNeighbors,promoteEmptyParagraphToSpacing,updateSpacing}from'../document/operations.js';import{createHistory,record,redo,undo}from'../document/history.js';import{serializeDocument}from'../telegram/serializer.js';import{telegramHaptic}from'../telegram/webApp.js';
 
 function plainText(v){return String(v??'').replace(/<[^>]*>/g,'');}
 function contentSelection(node){
@@ -54,104 +54,44 @@ function renderInline(node,inline){
   node.innerHTML='';
   for(const segment of normalizeInline(inline,'')){
     if(!segment.text)continue;
-    if(segment.marks?.bold){
-      const strong=document.createElement('strong');
-      strong.textContent=segment.text;
-      node.appendChild(strong);
-    }else node.appendChild(document.createTextNode(segment.text));
+    let current=document.createTextNode(segment.text);
+    if(segment.marks?.italic){const em=document.createElement('em');em.appendChild(current);current=em}
+    if(segment.marks?.bold){const strong=document.createElement('strong');strong.appendChild(current);current=strong}
+    node.appendChild(current);
   }
 }
 function readInline(node){
   const out=[];
-  const walk=(current,bold=false)=>{
+  const walk=(current,marks={})=>{
     current.childNodes.forEach(child=>{
-      if(child.nodeType===Node.TEXT_NODE){
-        if(child.textContent)out.push({text:child.textContent,marks:{bold}});
-      }else if(child.nodeType===Node.ELEMENT_NODE){
-        walk(child,bold||child.tagName==='STRONG'||child.tagName==='B');
+      if(child.nodeType===Node.TEXT_NODE){if(child.textContent)out.push({text:child.textContent,marks:{...marks}})}
+      else if(child.nodeType===Node.ELEMENT_NODE){
+        const next={...marks};
+        if(child.tagName==='STRONG'||child.tagName==='B')next.bold=true;
+        if(child.tagName==='EM'||child.tagName==='I')next.italic=true;
+        walk(child,next);
       }
     });
   };
-  walk(node,false);
+  walk(node,{});
   return normalizeInline(out,node.textContent||'');
 }
-function selectionPoint(node,offset){
-  if(!node)return null;
-  if(node.nodeType===Node.TEXT_NODE)return[node,Math.max(0,Math.min(node.textContent.length,offset))];
-  const child=node.childNodes[Math.min(offset,node.childNodes.length)];
-  if(child?.nodeType===Node.TEXT_NODE)return[child,0];
-  return[node,Math.min(offset,node.childNodes.length)];
-}
 function collapseRichSelection(node,offset){
-  const selection=window.getSelection?.();
-  if(!selection)return;
-  const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
-  let pos=0,n;
-  while((n=walker.nextNode())){
-    const next=pos+n.textContent.length;
-    if(offset<=next){
-      const range=document.createRange();
-      range.setStart(n,Math.max(0,offset-pos));
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      node.focus();
-      return;
-    }
-    pos=next;
-  }
-  const range=document.createRange();
-  range.selectNodeContents(node);range.collapse(false);
+  const selection=window.getSelection?.();if(!selection)return;
+  const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let pos=0,n;
+  while((n=walker.nextNode())){const next=pos+n.textContent.length;if(offset<=next){
+    const range=document.createRange();range.setStart(n,Math.max(0,offset-pos));range.collapse(true);
+    selection.removeAllRanges();selection.addRange(range);node.focus();return;
+  }pos=next}
+  const range=document.createRange();range.selectNodeContents(node);range.collapse(false);
   selection.removeAllRanges();selection.addRange(range);node.focus();
 }
-function removeBoldAtCaret(node){
-  const selection=window.getSelection?.();
-  if(!selection||!selection.rangeCount||!selection.isCollapsed)return false;
-  let el=selection.anchorNode;
-  if(el?.nodeType===Node.TEXT_NODE)el=el.parentElement;
-  const strong=el?.closest?.('strong');
-  if(!strong||!node.contains(strong))return false;
-
-  const offsetRange=document.createRange();
-  offsetRange.selectNodeContents(strong);
-  offsetRange.setEnd(selection.anchorNode,selection.anchorOffset);
-  const offset=offsetRange.toString().length;
-  const value=strong.textContent||'';
-  const parent=strong.parentNode;
-  if(!parent)return false;
-
-  const before=value.slice(0,offset);
-  const after=value.slice(offset);
-  const beforeStrong=document.createElement('strong');
-  const beforeText=document.createTextNode(before);
-  const plain=document.createTextNode(after);
-
-  if(offset===0){
-    parent.insertBefore(plain,strong);
-  }else if(offset===value.length){
-    parent.insertBefore(plain,strong.nextSibling);
-  }else{
-    beforeStrong.appendChild(beforeText);
-    parent.insertBefore(beforeStrong,strong);
-    parent.insertBefore(plain,strong);
-  }
-  parent.removeChild(strong);
-
-  const caret=document.createRange();
-  caret.setStart(plain,0);
-  caret.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(caret);
-  return true;
-}
 function RichInput({id,text,inline,placeholder,className='',onChange,onSelect,onKeyDown,onInlineSelect}){
-  const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef('');
+  const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef(''),pendingInput=useRef(null);
   useLayoutEffect(()=>{
     const node=ref.current;if(!node)return;
     if(lastRender.current!==renderKey){
-      const saved=contentSelection(node);
-      renderInline(node,inline);
-      lastRender.current=renderKey;
+      const saved=contentSelection(node);renderInline(node,inline);lastRender.current=renderKey;
       if(saved)requestAnimationFrame(()=>setContentSelection(node,saved.start,saved.end));
     }
   },[renderKey,inline]);
@@ -159,21 +99,29 @@ function RichInput({id,text,inline,placeholder,className='',onChange,onSelect,on
     onFocus={()=>onSelect?.(ref.current)}
     onSelect={()=>onInlineSelect?.(ref.current)}
     onBeforeInput={e=>{
-      if(e.inputType==='insertText'&&!e.isComposing){
-        removeBoldAtCaret(e.currentTarget);
-      }
+      if(e.isComposing)return;
+      const range=contentSelection(e.currentTarget);if(!range)return;
+      if(e.inputType==='insertText'||e.inputType==='insertReplacementText'||e.inputType==='insertFromPaste')
+        pendingInput.current={start:range.start,end:range.end,data:String(e.data??'')};
+      else pendingInput.current=null;
     }}
-    onKeyDown={e=>{
-      const selection=window.getSelection?.();
-      if(selection?.isCollapsed&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
-        removeBoldAtCaret(e.currentTarget);
-      }
-      onKeyDown?.(e,e.currentTarget);
-    }}
+    onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}
     onInput={e=>{
-      const next=readInline(e.currentTarget),nextInline=inlineHasMarks(next)?next:undefined;
+      let next=readInline(e.currentTarget),pending=pendingInput.current;
+      if(pending){
+        const insertedLength=pending.data.length;
+        const replacementLength=pending.end-pending.start;
+        const nextLength=inlineText(next).length;
+        const expectedLength=inlineText(inline||[]).length-replacementLength+insertedLength;
+        const delta=Math.max(0,nextLength-expectedLength);
+        const insertedEnd=Math.max(pending.start,Math.min(nextLength,pending.start+insertedLength+delta));
+        next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'bold');
+        next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'italic');
+      }
+      pendingInput.current=null;
+      const nextText=inlineText(next),nextInline=inlineHasMarks(next)?next:undefined;
       lastRender.current=JSON.stringify(nextInline||[]);
-      onChange?.(inlineText(next),nextInline,e.currentTarget);
+      onChange?.(nextText,nextInline,e.currentTarget);
     }}/>;
 }
 function Editable({id,text,placeholder='',className='',onChange,onKeyDown}){const ref=useRef(null);useEffect(()=>{const node=ref.current;if(!node)return;const value=String(text??'');if(node.textContent!==value)node.textContent=value},[text]);return <div ref={ref} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} onInput={e=>onChange?.(e.currentTarget.textContent||'')} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
@@ -250,45 +198,31 @@ function textChange(id,text,inline){
     return next;
   })},null,{coalesce:true});
 }
-function applyBold(){
+function applyInlineFormatting(mark){
   if(!inlineSelection)return;
   const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
   if(!block||!['paragraph','heading','footer'].includes(block.type))return;
-  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,'bold');
+  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,mark);
   const patch={...block,text:inlineText(result.inline,block.text||'')};
   if(inlineHasMarks(result.inline))patch.inline=result.inline;else delete patch.inline;
   commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},null,{coalesce:false});
-  setInlineOpen(false);
-  setInlineSelection(null);
-  requestAnimationFrame(()=>{
-    const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');
-    if(!node)return;
-    const end=inlineSelection.end;
-    node.focus();
-    if(node.isContentEditable)collapseRichSelection(node,end);
-  });
+  setInlineOpen(false);setInlineSelection(null);
+  requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');if(node)collapseRichSelection(node,inlineSelection.end)});
   telegramHaptic('light');
 }
-function clearBold(){
+function applyBold(){applyInlineFormatting('bold')}
+function applyItalic(){applyInlineFormatting('italic')}
+function clearRegular(){
   if(!inlineSelection)return;
   const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
   if(!block||!['paragraph','heading','footer'].includes(block.type))return;
-  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,'bold');
-  const patch={...block,text:inlineText(result.inline,block.text||'')};
-  // Regular always removes bold, even if the selection is mixed.
-  const value=block.text||'',source=normalizeInline(block.inline,value),out=[];let cursor=0;
-  for(const seg of source){
-    const a=cursor,z=cursor+seg.text.length,from=Math.max(a,inlineSelection.start),to=Math.min(z,inlineSelection.end);
-    if(to>from)out.push({text:value.slice(a,from),marks:{...seg.marks}}, {text:value.slice(from,to),marks:{...seg.marks,bold:false}}, {text:value.slice(to,z),marks:{...seg.marks}});
-    else out.push(seg);
-    cursor=z;
-  }
-  const cleaned=normalizeInline(out,value).filter(x=>x.text);
-  patch.inline=inlineHasMarks(cleaned)?cleaned:undefined;
-  if(!patch.inline)delete patch.inline;
+  const value=block.text||'';
+  let cleaned=removeInlineMark(block.inline,value,inlineSelection.start,inlineSelection.end,'bold');
+  cleaned=removeInlineMark(cleaned,value,inlineSelection.start,inlineSelection.end,'italic');
+  const patch={...block,text:inlineText(cleaned,value)};
+  if(inlineHasMarks(cleaned))patch.inline=cleaned;else delete patch.inline;
   commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},null,{coalesce:false});
-  setInlineOpen(false);
-  setInlineSelection(null);
+  setInlineOpen(false);setInlineSelection(null);
   requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');if(node)collapseRichSelection(node,inlineSelection.end)});
   telegramHaptic('light');
 }
@@ -307,6 +241,6 @@ const common={id:b.id,text:b.text||'',placeholder:b.structural?'Write somethingâ
 const textInput=()=>b.inline?<RichInput {...common} inline={b.inline} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>key(b,e,node)}/>:<PlainInput {...common} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text)=>textChange(b.id,text)} onKeyDown={(e,node)=>key(b,e,node)}/>;if(b.type==='spacing')return <div key={b.id} className={'editor-block spacing-editor-block '+(active===b.id?'active':'')} onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="spacing-control" onClick={e=>e.stopPropagation()}><button type="button" aria-label="Decrease spacing" disabled={b.lines<=1} onClick={()=>commit(updateSpacing(doc,b.id,b.lines-1))}><MinusCircle size={18}/></button><span>{b.lines} {b.lines===1?'line':'lines'}</span><button type="button" aria-label="Increase spacing" disabled={b.lines>=8} onClick={()=>commit(updateSpacing(doc,b.id,b.lines+1))}><Plus size={18}/></button></div></div>;if(b.type==='blockquote'||b.type==='expandable_blockquote'||b.type==='pullquote')return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='blockquote'?'blockquote-editor-block ':b.type==='expandable_blockquote'?'expandable-blockquote-editor-block ':'pullquote-editor-block ')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}<textarea data-editor-id={b.id} className={'editable quote-editable '+(b.type==='pullquote'?'pullquote-text':b.type==='expandable_blockquote'?'expandable-blockquote-text':'blockquote-text')} value={b.text||''} placeholder={common.placeholder} rows={1} spellCheck enterKeyHint="enter" autoCapitalize="sentences" onFocus={e=>{setActive(b.id);resizeQuote(e.currentTarget)}} onInput={e=>resizeQuote(e.currentTarget)} onChange={e=>textChange(b.id,e.target.value)} onKeyDown={e=>quoteKey(b,e,e.currentTarget)}/><div className={'quote-credit-wrap '+(b.type==='pullquote'?'pullquote-credit':b.type==='expandable_blockquote'?'expandable-blockquote-credit':'blockquote-credit')}><div className="quote-credit-field">{!String(b.credit||'').length&&<span className="quote-credit-placeholder" aria-hidden="true">Credit (optional)</span>}<Editable id={b.id+'-credit'} text={b.credit||''} placeholder="" className="quote-credit" onChange={t=>updateCredit(b.id,t)} onKeyDown={creditKey}/></div></div></div>;
 return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='heading'?'heading-editor-block ':b.type==='footer'?'footer-editor-block ':'')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}{textInput()}</div>}
 function menu(){const activeBlock=doc.blocks.find(b=>b.id===active)||doc.blocks[0];return <div className="format-menu" role="menu">{menuItems.map((item,i)=>item.divider?<div className="format-divider" key={'d'+i}/>:<button type="button" key={item.type+(item.size||'')} className={activeBlock?.type===item.type&&(!item.size||activeBlock?.size===item.size)?'selected':''} role="menuitem" onMouseDown={e=>e.preventDefault()} onClick={()=>type(item.type,{size:item.size})}><item.Icon size={19}/><span>{item.label}</span>{activeBlock?.type===item.type&&(!item.size||activeBlock?.size===item.size)&&<Check size={17} className="menu-check"/>}</button>)}</div>}
-function inlineMenu(){return <div className="inline-menu" role="menu">{inlineMenuItems.map((item,i)=>item.divider?<div className="format-divider" key={'id'+i}/>:<button type="button" key={item.type} className={'inline-menu-item '+(item.soon?'soon-item':'')} disabled={!!item.soon} role="menuitem" aria-disabled={item.soon||undefined} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(item.soon)return;if(item.type==='bold')applyBold();else if(item.type==='regular')clearBold();else telegramHaptic('light')}}><item.Icon size={18}/><span>{item.label}</span>{item.soon&&<small className="soon-badge">Soon</small>}</button>)}</div>}
+function inlineMenu(){return <div className="inline-menu" role="menu">{inlineMenuItems.map((item,i)=>item.divider?<div className="format-divider" key={'id'+i}/>:<button type="button" key={item.type} className={'inline-menu-item '+(item.soon?'soon-item':'')} disabled={!!item.soon} role="menuitem" aria-disabled={item.soon||undefined} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(item.soon)return;if(item.type==='bold')applyBold();else if(item.type==='italic')applyItalic();else if(item.type==='regular')clearRegular();else telegramHaptic('light')}}><item.Icon size={18}/><span>{item.label}</span>{item.soon&&<small className="soon-badge">Soon</small>}</button>)}</div>}
 return <div className="editor-shell"><div className="topbar"><button className="icon-button history-button" disabled={!history.current.past.length} onClick={()=>{const n=undo(history.current,doc);if(n){setDoc(n);telegramHaptic('light')}}} aria-label="Undo"><Undo2 size={19}/></button><button className="icon-button history-button" disabled={!history.current.future.length} onClick={()=>{const n=redo(history.current,doc);if(n){setDoc(n);telegramHaptic('light')}}} aria-label="Redo"><Redo2 size={19}/></button></div><main className="document-area">{doc.blocks.map(block)}</main><div className="composer-bar"><div className="format-wrap inline-format-wrap"><button type="button" className={'tool-button inline-format-button '+(inlineOpen?'active':'')} disabled={!inlineSelection} onClick={()=>{if(!inlineSelection)return;setInlineOpen(x=>!x);setOpen(false);telegramHaptic('light')}} aria-label="Inline formatting" aria-expanded={inlineOpen} title={inlineSelection?'Inline formatting':'Select text to format'}><span className="bold-glyph">B</span></button>{inlineOpen&&inlineSelection&&inlineMenu()}</div><div className="format-wrap"><button className={'tool-button format-button '+(open?'active':'')} onClick={()=>{setOpen(x=>!x);setInlineOpen(false);telegramHaptic('light')}} aria-label="Block type" aria-expanded={open}><span className="heading-glyph">H</span></button>{open&&menu()}</div><button className={'send-composer-button '+(hasContent?'visible':'')} onClick={()=>{if(!hasContent)return;telegramHaptic('light');onSend?.(doc)}} aria-label="Send rich message" aria-hidden={!hasContent} tabIndex={hasContent?0:-1} disabled={!hasContent}><SendHorizontal size={20}/></button></div></div>}
 export {serializeDocument};

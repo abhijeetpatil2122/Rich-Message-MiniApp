@@ -102,58 +102,23 @@ function collapseRichSelection(node,offset){
   const range=document.createRange();range.selectNodeContents(node);range.collapse(false);
   selection.removeAllRanges();selection.addRange(range);node.focus();
 }
-function insertInlineNewline(inline,text,start,end){
-  const value=inlineText(inline,text),a=Math.max(0,Math.min(value.length,Number(start)||0)),z=Math.max(a,Math.min(value.length,Number(end)||0));
-  const source=normalizeInline(inline,value),before=sliceInline(source,value,0,a),after=sliceInline(source,value,z,value.length);
-  let marks={};
-  let cursor=0;
-  for(const segment of source){
-    const next=cursor+segment.text.length;
-    if(a>cursor&&a<=next){marks={...segment.marks};break}
-    if(a===0){marks={...segment.marks};break}
-    cursor=next;
-  }
-  return normalizeInline([...before,{text:'\n',marks},...after],value.slice(0,a)+'\n'+value.slice(z));
-}
 function RichInput({id,text,inline,placeholder,className='',preserveNewlines=false,onChange,onSelect,onKeyDown,onInlineSelect}){
-  const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef(''),pendingInput=useRef(null),pendingCaret=useRef(null);
+  const ref=useRef(null),renderKey=JSON.stringify(inline||[]),lastRender=useRef('');
   useLayoutEffect(()=>{
     const node=ref.current;if(!node)return;
     if(lastRender.current!==renderKey){
-      const saved=contentSelection(node);renderInline(node,inline);lastRender.current=renderKey;
-      if(saved)requestAnimationFrame(()=>setContentSelection(node,saved.start,saved.end));
-    }
-    if(pendingCaret.current!==null){
-      const caret=pendingCaret.current;pendingCaret.current=null;
-      requestAnimationFrame(()=>{if(ref.current)setContentSelection(ref.current,caret,caret)});
+      const saved=contentSelection(node);
+      renderInline(node,inline);
+      lastRender.current=renderKey;
+      if(saved)requestAnimationFrame(()=>{if(ref.current)setContentSelection(ref.current,saved.start,saved.end)});
     }
   },[renderKey,inline]);
   const handleInput=(node)=>{
-    let next=readInline(node),pending=pendingInput.current;
-    if(pending){
-      const insertedLength=pending.data.length;
-      const replacementLength=pending.end-pending.start;
-      const nextLength=inlineText(next).length;
-      const expectedLength=inlineText(inline||[]).length-replacementLength+insertedLength;
-      const delta=Math.max(0,nextLength-expectedLength);
-      const insertedEnd=Math.max(pending.start,Math.min(nextLength,pending.start+insertedLength+delta));
-      next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'bold');
-      next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'italic');
-      next=removeInlineMark(next,inlineText(next),pending.start,insertedEnd,'underline');
-    }
-    pendingInput.current=null;
-    const nextText=inlineText(next),nextInline=inlineHasMarks(next)?next:undefined;
+    let next=readInline(node);
+    const nextText=inlineText(next);
+    const nextInline=inlineHasMarks(next)?next:undefined;
     lastRender.current=JSON.stringify(nextInline||[]);
     onChange?.(nextText,nextInline,node);
-  };
-  const insertNewline=(node)=>{
-    const range=contentSelection(node);if(!range)return false;
-    const source=inline||[{text:String(text??''),marks:{}}];
-    const next=insertInlineNewline(source,inlineText(source,text||''),range.start,range.end);
-    pendingCaret.current=range.start+1;
-    lastRender.current=JSON.stringify(next);
-    onChange?.(inlineText(next),next,node);
-    return true;
   };
   return <div className="rich-input-shell">
     <div ref={ref} data-editor-id={id} className={'editable plain-input rich-input '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} spellCheck={true}
@@ -161,144 +126,21 @@ function RichInput({id,text,inline,placeholder,className='',preserveNewlines=fal
       onSelect={()=>onInlineSelect?.(ref.current)}
       onBeforeInput={e=>{
         if(e.isComposing)return;
-        const range=contentSelection(e.currentTarget);if(!range)return;
-        if(preserveNewlines&&(e.inputType==='insertParagraph'||e.inputType==='insertLineBreak')){
-          if(e.cancelable)e.preventDefault();
-          insertNewline(e.currentTarget);
-          pendingInput.current=null;
-          return;
+        const range=contentSelection(e.currentTarget);
+        if(!range)return;
+        if(e.inputType==='insertText'||e.inputType==='insertReplacementText'||e.inputType==='insertFromPaste'){
+          const data=String(e.data??'');
+          if(!data)return;
+          // Remember the range only for normal text insertion; the browser owns
+          // paragraph/line-break insertion so mobile contenteditable caret behavior
+          // remains native.
         }
-        if(e.inputType==='insertText'||e.inputType==='insertReplacementText'||e.inputType==='insertFromPaste')
-          pendingInput.current={start:range.start,end:range.end,data:String(e.data??'')};
-        else pendingInput.current=null;
       }}
-      onKeyDown={e=>{
-        if(preserveNewlines&&e.key==='Enter'&&!e.isComposing){
-          e.preventDefault();
-          insertNewline(e.currentTarget);
-          return;
-        }
-        onKeyDown?.(e,e.currentTarget)
-      }}
+      onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}
       onInput={e=>handleInput(e.currentTarget)}/>
     {!String(text??'').length&&<span className={'editor-placeholder rich-input-placeholder quote-placeholder '+(className.includes('pullquote-text')?'pullquote-text':className.includes('expandable-blockquote-text')?'expandable-blockquote-text':'blockquote-text')} aria-hidden="true">{placeholder}</span>}
   </div>;
 }
-function Editable({id,text,placeholder='',className='',onChange,onKeyDown}){const ref=useRef(null);useEffect(()=>{const node=ref.current;if(!node)return;const value=String(text??'');if(node.textContent!==value)node.textContent=value},[text]);return <div ref={ref} data-editor-id={id} className={'editable '+className} contentEditable suppressContentEditableWarning data-placeholder={placeholder} data-placeholder-visible={text?'false':'true'} onInput={e=>onChange?.(e.currentTarget.textContent||'')} onKeyDown={e=>onKeyDown?.(e,e.currentTarget)}/>}
-
-const inlineMenuItems=[
- {type:'regular',label:'Regular',Icon:Pilcrow},
- {type:'bold',label:'Bold',Icon:Bold},
- {type:'italic',label:'Italic',Icon:Italic},
- {type:'underline',label:'Underline',Icon:Underline},
- {type:'strikethrough',label:'Strikethrough',Icon:Strikethrough},
- {type:'spoiler',label:'Spoiler',Icon:EyeOff},
- {type:'code',label:'Monospace',Icon:Code2},
- {divider:true},
- {type:'subscript',label:'Subscript',Icon:Subscript},
- {type:'superscript',label:'Superscript',Icon:Superscript},
- {type:'marked',label:'Marked',Icon:Highlighter},
- {divider:true},
- {type:'url',label:'Link',Icon:Link2},
- {type:'mention',label:'Mention',Icon:AtSign},
- {type:'custom_emoji',label:'Custom Emoji',Icon:SmilePlus,soon:true},
- {type:'date_time',label:'Date & Time',Icon:Clock3},
- {type:'email',label:'Email',Icon:Mail},
- {type:'phone',label:'Phone',Icon:Phone},
- {type:'button',label:'Rich Button',Icon:MousePointerClick},
- {divider:true},
- {type:'hashtag',label:'Hashtag',Icon:Hash,soon:true},
- {type:'cashtag',label:'Cashtag',Icon:DollarSign,soon:true},
- {type:'bot_command',label:'Bot Command',Icon:Terminal,soon:true},
- {type:'bank_card',label:'Bank Card',Icon:CreditCard,soon:true},
- {divider:true},
- {type:'math',label:'Mathematical Expression',Icon:SquareSigma,soon:true},
- {type:'reference',label:'Reference',Icon:BookOpen,soon:true},
- {type:'anchor',label:'Anchor',Icon:Anchor,soon:true}
-];
-
-const menuItems=[
- {type:'paragraph',label:'Paragraph',Icon:Pilcrow},
- {type:'heading',size:1,label:'Heading 1',Icon:Heading1},
- {type:'heading',size:2,label:'Heading 2',Icon:Heading2},
- {type:'heading',size:3,label:'Heading 3',Icon:Heading3},
- {type:'heading',size:4,label:'Heading 4',Icon:Heading4},
- {type:'heading',size:5,label:'Heading 5',Icon:Heading5},
- {type:'heading',size:6,label:'Heading 6',Icon:Heading6},
- {divider:true},
- {type:'pre',label:'Code block',Icon:Code2},
- {type:'footer',label:'Footer',Icon:Pilcrow},
- {type:'blockquote',label:'Blockquote',Icon:Quote},
- {type:'expandable_blockquote',label:'Expandable blockquote',Icon:ChevronsDownUp},
- {type:'pullquote',label:'Pullquote',Icon:Quote},
- {divider:true},
- {type:'list-bullet',label:'Bulleted list',Icon:List},
- {type:'list-number',label:'Numbered list',Icon:ListOrdered},
- {type:'list-checklist',label:'Checklist',Icon:ListChecks},
- {type:'divider',label:'Divider',Icon:Minus}
-];
-
-export default function RichEditor({onSend}){const[doc,setDoc]=useState(createInitialDocument),[active,setActive]=useState(null),[open,setOpen]=useState(false),[inlineOpen,setInlineOpen]=useState(false),[inlineSelection,setInlineSelection]=useState(null),history=useRef(createHistory()),pendingFocus=useRef(null);
-const hasContent=doc.blocks.some(b=>{if(b.type==='list')return b.items?.some(i=>String(i.text||'').trim());if(b.type==='divider')return true;return String(b.text||'').trim()});
-useLayoutEffect(()=>{if(!pendingFocus.current)return;const target=pendingFocus.current;pendingFocus.current=null;requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(target.id)+'"]');if(!node)return;node.focus();if(typeof node.setSelectionRange==='function'){const value=String(node.value||'');const start=Math.max(0,Math.min(value.length,target.start??target.offset??0));const end=Math.max(start,Math.min(value.length,target.end??target.offset??start));node.setSelectionRange(start,end)}else focus(target.id,target.offset||target.start||0)})},[doc]);
-function commit(next,focusTarget=null,opts={}){const blocks=[];next.blocks.forEach((b,i)=>{blocks.push(b);if(b.type==='spacing'&&next.blocks[i+1]?.type!=='paragraph')blocks.push({id:crypto.randomUUID(),type:'paragraph',text:'',structural:true})});const normalized=blocks.length===next.blocks.length?next:{...next,blocks};record(history.current,doc,opts);if(focusTarget)pendingFocus.current={id:focusTarget.id,start:focusTarget.start??focusTarget.offset??0,end:focusTarget.end??focusTarget.start??focusTarget.offset??0};setDoc(normalized)}
-function captureInlineSelection(blockId,node){
-  if(!node)return;
-  const range=typeof node.selectionStart==='number'
-    ? {start:Math.min(node.selectionStart,node.selectionEnd??node.selectionStart),end:Math.max(node.selectionStart,node.selectionEnd??node.selectionStart)}
-    : contentSelection(node);
-  if(!range){setInlineSelection(null);return}
-  setInlineSelection(range.end>range.start?{blockId,...range}:null);
-}
-function textChange(id,text,inline){
-  commit({...doc,blocks:doc.blocks.map(b=>{
-    if(b.id!==id)return b;
-    const nextText=Array.isArray(inline)?inlineText(inline):String(text??'');
-    const next={...b,text:nextText};
-    if(Array.isArray(inline)&&inline.length)next.inline=inline;else delete next.inline;
-    return next;
-  })},null,{coalesce:true});
-}
-function applyInlineFormatting(mark){
-  if(!inlineSelection)return;
-  const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
-  if(!block||!['paragraph','heading','footer','blockquote','expandable_blockquote','pullquote'].includes(block.type))return;
-  const result=applyInlineMark(block.inline,block.text||'',inlineSelection.start,inlineSelection.end,mark);
-  const patch={...block,text:inlineText(result.inline,block.text||'')};
-  if(inlineHasMarks(result.inline))patch.inline=result.inline;else delete patch.inline;
-  commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},null,{coalesce:false});
-  setInlineOpen(false);setInlineSelection(null);
-  requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');if(node)collapseRichSelection(node,inlineSelection.end)});
-  telegramHaptic('light');
-}
-function applyBold(){applyInlineFormatting('bold')}
-function applyItalic(){applyInlineFormatting('italic')}
-function applyUnderline(){applyInlineFormatting('underline')}
-function clearRegular(){
-  if(!inlineSelection)return;
-  const block=doc.blocks.find(b=>b.id===inlineSelection.blockId);
-  if(!block||!['paragraph','heading','footer','blockquote','expandable_blockquote','pullquote'].includes(block.type))return;
-  const value=block.text||'';
-  let cleaned=removeInlineMark(block.inline,value,inlineSelection.start,inlineSelection.end,'bold');
-  cleaned=removeInlineMark(cleaned,value,inlineSelection.start,inlineSelection.end,'italic');
-  cleaned=removeInlineMark(cleaned,value,inlineSelection.start,inlineSelection.end,'underline');
-  const patch={...block,text:inlineText(cleaned,value)};
-  if(inlineHasMarks(cleaned))patch.inline=cleaned;else delete patch.inline;
-  commit({...doc,blocks:doc.blocks.map(b=>b.id===block.id?patch:b)},null,{coalesce:false});
-  setInlineOpen(false);setInlineSelection(null);
-  requestAnimationFrame(()=>{const node=document.querySelector('[data-editor-id="'+CSS.escape(block.id)+'"]');if(node)collapseRichSelection(node,inlineSelection.end)});
-  telegramHaptic('light');
-}
-function key(block,e,node){const off=selectionOffset(node);setActive(block.id);if(e.key==='Enter'){if(block.type==='blockquote'||block.type==='expandable_blockquote'||block.type==='pullquote')return;e.preventDefault();if(block.type==='paragraph'&&!String(block.text||'').trim()){const r=promoteEmptyParagraphToSpacing(doc,block.id);if(r.nextId){commit(r.doc,{id:r.nextId});setActive(r.nextId);telegramHaptic('light')}return}const r=splitTextBlock(doc,block.id,off);if(r.nextId)commit(r.doc,{id:r.nextId});return}if(e.key==='Backspace'&&off===0){e.preventDefault();if(block.structural){const i=doc.blocks.findIndex(x=>x.id===block.id),prev=doc.blocks[i-1];if(prev?.intentionalEmpty){commit(removeBlock(doc,prev.id),{id:block.id});telegramHaptic('light');return}}const r=mergePrevious(doc,block.id);if(r.doc!==doc)commit(r.doc,{id:r.focusId,offset:r.offset})}}
-function listEnter(block,item,index,node){if(!item.text&&index===block.items.length-1){commit(removeBlock(doc,block.id));return}const off=selectionOffset(node);const r=splitListItem(doc,block.id,item.id,off);if(r.nextItemId)commit(r.doc,{id:r.nextItemId})}
-function listBeforeInput(block,item,index,e,node){if(e.inputType!=='insertParagraph'&&e.inputType!=='insertLineBreak')return;if(e.cancelable){e.preventDefault();listEnter(block,item,index,node)}}
-function listKey(block,item,index,e,node){const off=selectionOffset(node);if(e.key==='Enter'){e.preventDefault();listEnter(block,item,index,node)}else if(e.key==='Backspace'&&off===0&&!item.text&&block.items.length>1){e.preventDefault();commit(removeListItem(doc,block.id,item.id))}}
-function deleteBlock(id){const index=doc.blocks.findIndex(b=>b.id===id);if(index<0)return;const next=removeBlock(doc,id);const target=next.blocks[index]||next.blocks[index-1]||next.blocks[0];commit(next);setActive(target?.id||null);telegramHaptic('light')}
-function type(kind,o={}){const id=active||doc.blocks[0].id;const t=kind.startsWith('list-')?'list':kind;const style=kind==='list-number'?'number':kind==='list-checklist'?'checklist':'bullet';let next=changeType(doc,id,t,t==='list'?{style}:o);if(t!=='heading'&&t!=='paragraph')next=ensureEditableNeighbors(next,id);commit(next,{id});setOpen(false);telegramHaptic('light')}
-function updateCredit(id,credit){commit({...doc,blocks:doc.blocks.map(b=>b.id===id?{...b,credit}:b)},null,{coalesce:true})}
-function quoteKey(block,e,node){if(e.key!=='Backspace'||selectionOffset(node)!==0)return;e.preventDefault();const r=mergePrevious(doc,block.id);if(r.doc!==doc)commit(r.doc,{id:r.focusId,offset:r.offset})}
-function resizeQuote(node){if(!node)return;node.style.height='auto';node.style.height=Math.max(27,node.scrollHeight)+'px'}
-function creditKey(e){if(e.key==='Enter')e.preventDefault()}
 function block(b){const canDelete=active===b.id;const del=<button type="button" className="block-delete" aria-label={`Delete ${b.type}`} onMouseDown={e=>e.preventDefault()} onClick={e=>{e.stopPropagation();deleteBlock(b.id)}}><Trash2 size={16}/></button>;if(b.type==='divider')return <div key={b.id} className="editor-block divider-editor-block" onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="divider-block"/></div>;if(b.type==='pre')return <div key={b.id} className="editor-block pre-editor-block" onFocus={()=>setActive(b.id)}>{canDelete&&del}<div className="pre-wrap"><textarea data-editor-id={b.id} value={b.text} placeholder="Code…" onFocus={()=>setActive(b.id)} onChange={e=>commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,text:e.target.value}:x)})}/><select value={b.language} onChange={e=>commit({...doc,blocks:doc.blocks.map(x=>x.id===b.id?{...x,language:e.target.value}:x)})}><option value="">Plain text</option>{['javascript','typescript','python','html','css','json','bash','sql','java','c','cpp','csharp','go','rust','php','kotlin','swift','xml','yaml','markdown'].map(x=><option key={x} value={x}>{x}</option>)}</select></div></div>;if(b.type==='list')return <div className="editor-block list-editor-block" key={b.id} onFocus={()=>setActive(b.id)}>{canDelete&&del}<div className="list-block">{b.items.map((i,n)=><div className="list-item" key={i.id}><span className="marker">{b.style==='number'?n+1+'.':b.style==='checklist'?<input type="checkbox" checked={!!i.checked} onChange={e=>commit(updateListItem(doc,b.id,i.id,{checked:e.target.checked}))}/>: '•'}</span><PlainInput id={i.id} text={i.text} placeholder="List item" className="list-editable" singleLine onSelect={()=>setActive(b.id)} onBeforeInput={(e,n)=>listBeforeInput(b,i,n,e,n)} onChange={(t)=>commit(updateListItem(doc,b.id,i.id,{text:String(t||'').replace(/[\\r\\n]/g,'')}),null,{coalesce:true})} onKeyDown={(e,n)=>listKey(b,i,n,e,n)}/></div>)}</div></div>;
 const common={id:b.id,text:b.text||'',placeholder:b.structural?'Write something…':b.type==='heading'?'Heading '+b.size:b.type==='footer'?'Footer':b.type==='blockquote'?'Blockquote':b.type==='expandable_blockquote'?'Expandable Blockquote':b.type==='pullquote'?'Pull Quote':'Write something…',className:b.type==='heading'?'heading h-'+b.size:b.type==='footer'?'footer':''};
 const textInput=()=>b.inline?<RichInput {...common} inline={b.inline} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>key(b,e,node)}/>:<PlainInput {...common} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text)=>textChange(b.id,text)} onKeyDown={(e,node)=>key(b,e,node)}/>;if(b.type==='spacing')return <div key={b.id} className={'editor-block spacing-editor-block '+(active===b.id?'active':'')} onClick={()=>setActive(b.id)}>{canDelete&&del}<div className="spacing-control" onClick={e=>e.stopPropagation()}><button type="button" aria-label="Decrease spacing" disabled={b.lines<=1} onClick={()=>commit(updateSpacing(doc,b.id,b.lines-1))}><MinusCircle size={18}/></button><span>{b.lines} {b.lines===1?'line':'lines'}</span><button type="button" aria-label="Increase spacing" disabled={b.lines>=8} onClick={()=>commit(updateSpacing(doc,b.id,b.lines+1))}><Plus size={18}/></button></div></div>;if(b.type==='blockquote'||b.type==='expandable_blockquote'||b.type==='pullquote')return <div key={b.id} className={'editor-block text-editor-block '+(b.type==='blockquote'?'blockquote-editor-block ':b.type==='expandable_blockquote'?'expandable-blockquote-editor-block ':'pullquote-editor-block ')+(active===b.id?'active':'')} onFocus={()=>setActive(b.id)}>{canDelete&&del}<RichInput {...common} preserveNewlines inline={b.inline||[{text:b.text||'',marks:{}}]} className={'quote-editable '+(b.type==='pullquote'?'pullquote-text':b.type==='expandable_blockquote'?'expandable-blockquote-text':'blockquote-text')} onSelect={()=>setActive(b.id)} onInlineSelect={node=>captureInlineSelection(b.id,node)} onChange={(text,inline)=>textChange(b.id,text,inline)} onKeyDown={(e,node)=>{if(e.key==='Backspace'&&selectionOffset(node)===0){e.preventDefault();quoteKey(b,e,node);return}key(b,e,node)}}/><div className={'quote-credit-wrap '+(b.type==='pullquote'?'pullquote-credit':b.type==='expandable_blockquote'?'expandable-blockquote-credit':'blockquote-credit')}><div className="quote-credit-field">{!String(b.credit||'').length&&<span className="quote-credit-placeholder" aria-hidden="true">Credit (optional)</span>}<Editable id={b.id+'-credit'} text={b.credit||''} placeholder="" className="quote-credit" onChange={t=>updateCredit(b.id,t)} onKeyDown={creditKey}/></div></div></div>;
